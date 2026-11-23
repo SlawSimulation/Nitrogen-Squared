@@ -66,3 +66,8 @@ compiler action, stage-local counter, selected worker budget and elapsed time.
 The task continues across navigation. Quiet stages keep an indeterminate bar
 and a moving elapsed clock; they do not invent an overall percent or estimate.
 Desktop jobs default to 80% of available logical threads, rounded down.
+
+Mods (Phase 1, dev): the Mods page lists `.psxmod` packages kept in `.local/mods`,
+with install, enable/disable and remove. The backend validates packages with the
+game build's own manifest parser and stages enabled ones before Play. See
+[docs/MODS.md](../docs/MODS.md).

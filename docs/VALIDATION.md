@@ -1888,44 +1888,9 @@ outside and clocks are unchanged. TESTING.md retains n0202, focused player check
 and byte-identical submitted results. Complete source delivered for owner push;
 no remote mutation, promotion, tag, release or rerun was performed.
 
+## Mod framework work (dev, unreleased) — 2026-11-23
 
-## Phase 0 framework mod activation probe (dev, unreleased) — 2026-11-23
-
-Source inspection of the pinned framework (f42d2c0) shows that mod catalog
-scan, state.toml selection, plan commit and plugin activation run on every
-Nitrogen launch, outside the recomp-ui launcher blocks. See [MODS.md](MODS.md).
-The new NITROGEN_MODS option (default OFF) links only the original
-nitrogen.mod-probe plugin, which reads and writes no guest state.
-
-Local Windows run of tools/ci_runtime_build.py with the pinned LLVM-MinGW,
-CMake and Ninja (local job count raised from 2): the real runtime booted
-unattended against the original synthetic program and a zero-filled
-synthetic disc file. Every scenario used a fresh staged copy of the runtime:
-
-| Build | Package state | Result |
-| --- | --- | --- |
-| OFF | none | stays running; no activation |
-| OFF | probe enabled | exit 1 before BIOS: `trusted plugin is unavailable: nitrogen.mod-probe` |
-| ON | none | stays running; no activation |
-| ON | probe enabled | `mod probe activated` before BIOS load, then first VBlank callback; receipt activations=1, vblanks=1 |
-| ON | probe installed, disabled | stays running; no activation |
-| ON | manifest syntax error | `mod manifest ignored`; stays running; no activation |
-| ON | feature names unlinked plugin id | exit 1 before BIOS: `cannot launch with selected mods` |
-
-The existing save-path, keyboard, status/title, media, native-slice (384
-calls), native-boundary (122 cases) and input smokes then passed, rebuilt
-with NITROGEN_MODS=OFF. All 174 Python tests pass without skips when the
-pinned MinGit, CMake, Ninja and LLVM-MinGW are on PATH. With this host's MSYS
-git, seven portable git fixtures crash in `git fetch` (0xC0000005); the same
-seven also fail on the unmodified baseline. The source audit passes for 193
-reviewed text files.
-
-Limits: no N2O disc was available on this host, so the probe has NOT been run
-against the player's game. The synthetic guest never reported game start
-(game_started=0); that path is unverified. Linux and GitHub CI have not run
-this change. The compiled-game input fingerprint changes to
-72bf1cd167126460522d9a53d349bd2bff6205619a0dfc393b8a53e947d39057 because
-CMakeLists.txt, cmake/ and native/ changed. A release containing it would
-rebuild player games once, even with the option OFF. VERSION, TESTING.md,
-native selection, coverage 38.4156% linked / 61.5844% outside and clocks are
-unchanged.
+Phase 0 framework mod activation (synthetic and real USA disc) and the Phase 1
+mod manager are recorded in [VALIDATION_MODS.md](VALIDATION_MODS.md). Neither
+changes VERSION, native selection, clocks or coverage (38.4156% linked /
+61.5844% outside).

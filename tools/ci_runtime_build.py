@@ -116,6 +116,67 @@ def run_mod_probe(binary: Path, work: Path, config: Path, scenarios):
             raise RuntimeError("Invalid probe manifest was not reported as ignored:\n" + result["log"][-6000:])
 
 
+def run_modkit(binary: Path, work: Path, config: Path, mods_on: bool):
+    """Install, validate, select and stage original .psxmod packages with the modkit
+    against this real runtime: its plugin report and manifest parser are authoritative."""
+    import hashlib, shutil, tempfile, zipfile
+    from mod_probe import manifest, launch, stage_runtime, ACTIVATED
+    from modkit import ModError
+    from modkit.package import ModStore
+    label = "on" if mods_on else "off"
+    root = work / f"modkit-{label}"
+    shutil.rmtree(root, ignore_errors=True)
+    root.mkdir(parents=True)
+    staged = stage_runtime(binary, Path(tempfile.mkdtemp(prefix="modkit-runtime-", dir=root)) / "runtime")
+    build = (staged, hashlib.sha256(staged.read_bytes()).hexdigest())
+    store = ModStore(root / "store", game_id="SYNTHETIC")
+
+    def package(name, text):
+        path = root / f"{name}.psxmod"
+        with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+            z.writestr("manifest.toml", text)
+        return path
+
+    plugins = store.plugins(build)
+    if "psx.bezel" not in plugins or ("nitrogen.mod-probe" in plugins) != mods_on:
+        raise RuntimeError(f"Unexpected plugin report from the {label} build: {plugins}")
+    good = manifest("SYNTHETIC")
+    try:
+        store.install(package("bogus", good.replace('resolver = "declarative"', 'resolver = "bogus"')), build)
+        raise RuntimeError("The runtime manifest parser accepted an invalid resolver")
+    except ModError as e:
+        if "resolver must be declarative" not in str(e):
+            raise
+    store.install(package("probe", good), build)
+    [status] = store.status(build)
+    expected = "ready" if mods_on else "missing-plugins"
+    if status["compatibility"]["state"] != expected:
+        raise RuntimeError(f"Probe package status {status['compatibility']} in the {label} build")
+    if not mods_on:
+        try:
+            store.set_enabled(status["id"], True, build)
+            raise RuntimeError("A package needing an unlinked plugin was enabled")
+        except ModError:
+            pass
+        print("Modkit passed (NITROGEN_MODS=OFF): plugin report, framework manifest refusal, missing plugin", flush=True)
+        return
+    disc = work / "mod-probe-zero-sectors.bin"
+    store.set_enabled(status["id"], True, build)
+    store.stage(staged.parent, build)
+    receipt = staged.parent / "modkit-receipt.json"
+    alive, code, log = launch(staged, config, disc, receipt, 30.0, {"vblank", "game-started"})
+    value = json.loads(receipt.read_text()) if receipt.exists() else {}
+    if ACTIVATED not in log or value.get("activations") != 1 or value.get("vblanks", 0) < 1:
+        raise RuntimeError("Modkit-staged probe did not activate:\n" + log[-6000:])
+    store.set_enabled(status["id"], False, build)
+    store.stage(staged.parent, build)
+    receipt.unlink()
+    alive, code, log = launch(staged, config, disc, receipt, 12.0)
+    if not alive or ACTIVATED in log or receipt.exists() or (staged.parent / "mods/nitrogen-mods.json").exists():
+        raise RuntimeError("Disabling the modkit package did not restore an unmodded launch:\n" + log[-6000:])
+    print("Modkit passed (NITROGEN_MODS=ON): install, framework validation, staging, activation and restore", flush=True)
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--framework", type=Path, default=ROOT / ".local/psxrecomp")
@@ -228,6 +289,7 @@ def main():
     # so an enabled probe package must refuse launch instead of being ignored.
     run_mod_probe(runtime_binary, work, config, [
         ("off-no-package", None, "running"), ("off-enabled-probe", "enabled", "refused")])
+    run_modkit(runtime_binary, work, config, mods_on=False)
     subprocess.run(["cmake", "-S", str(ROOT), "-B", str(work / "build"), "-DNITROGEN_MODS=ON"], check=True)
     subprocess.run(["cmake", "--build", str(work / "build"), "--config", "Release",
                     "--target", "nitrogen-runtime", "--parallel", "2"], check=True)
@@ -235,6 +297,7 @@ def main():
         ("on-no-package", None, "running"), ("on-enabled-probe", "enabled", "active"),
         ("on-disabled-probe", "disabled", "running"), ("on-bad-manifest", "bad-manifest", "running"),
         ("on-missing-plugin", "missing-plugin", "refused")])
+    run_modkit(find_binary(work / "build", "NitrogenSquared-dev"), work, config, mods_on=True)
     print("Framework mod probe passed: catalog scan, state selection, commit, activation and VBlank callbacks", flush=True)
     # Reuse this build tree to run the real runtime's SDL routing/mapping with
     # a virtual controller. This entry point never boots the synthetic guest.
