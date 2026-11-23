@@ -2,6 +2,49 @@
 
 ## Current acceptance and update checks
 
+**0.2.2 development candidate — multi-BIN CUE disc import.**
+Disc import now accepts a CUE that splits the disc across several BINs, such as
+the owner's per-track USA dump: 11 BINs, Track 01 MODE2/2352 and Tracks 02–11
+AUDIO, each audio BIN starting with its INDEX 00 pregap (INDEX 01 00:02:00).
+Previously such a CUE was refused with "Only a verified single-BIN CUE is
+supported yet". The importer lays the BINs out in CUE order, treats each INDEX
+as relative to its own FILE, and requires the resulting track layout, size and
+SHA-256 of every sector to equal the unchanged USA identity. BINs are read in
+place: no merged copy is written and the original files are never changed.
+Selecting any BIN of the CUE finds that CUE. The soundtrack editor, Asset
+folders and the native movie player use the same layout; the framework mounts
+the CUE itself. Single-BIN CUEs and existing imports work as before.
+
+Player checks: N2-MULTIBIN-CUE imports the per-track CUE and plays; optional
+N2-MULTIBIN-ERRORS checks the messages on a copied folder only. tools/n2o_disc.py
+is a compiled-game input, so Play makes one game build update; it coincides with
+the update the unreleased soundtrack plugin already needs. Keep .local intact.
+
+Automated coverage: 11 synthetic CUE layout tests (an 11-BIN disc matching its
+merged form, import without merging, reads across BIN boundaries, tracks sharing
+a BIN, audio never read as data, soundtrack/asset reads, earlier import records,
+BIN-to-CUE selection, relative paths and letter case, 17 refusal cases plus
+unreadable and partial-sector BINs, changed or missing track BIN) and the
+unchanged single-BIN tests. Locally all 223 Python tests pass without skips, plus
+the runtime/renderer check, launcher unit/build/Playwright tests and source audit.
+On the owner's real 11-BIN dump (read only), the import, soundtrack slices and
+previews, movie binding and all 37 Asset folder outputs equal those from a
+merged copy, and a private diagnostics build mounted the CUE, reached the title
+and played CD track 2. Details: docs/VALIDATION_DISC.md.
+
+Limits: a dump whose pregap sits at the end of the previous BIN, with INDEX 00
+under that FILE, is refused because the framework cannot mount it. PREGAP and
+POSTGAP lines, non-BINARY files and cooked or other sector modes are refused.
+The disc must be one data track followed by audio; only the verified USA
+revision imports. The synthetic CI runtime does not mount a CUE, so the
+framework mount is covered by the real-disc run, not CI.
+
+The same candidate moves GitHub Actions to Node 24 action releases (checkout v5,
+setup-python v6, setup-node v5, upload-artifact v6, download-artifact v7).
+ilammy/msvc-dev-cmd has no Node 24 release and keeps its accepted Node 20
+warning. Fresh CI for this candidate is pending until it is pushed. Native
+selection remains 38.4156% linked / 61.5844% outside; clocks are unchanged.
+
 **0.2.2 development candidate — ZIP packaging date correction.**
 At d83eedd, Source checks (including browser interactions) and Windows/Linux
 runtime checks passed. Release failed both package jobs before smoke tests
@@ -998,9 +1041,39 @@ Instructions for future maintainers and assistants:
     "runtime": "Windows / Linux x64 \u00b7 USA disc",
     "cart": "",
     "createdAt": "2026-11-10",
-    "description": "Repairs future source mtimes behind the CMake loop, uses 80% desktop thread budgets and displays build stage/detail/workers/elapsed. Retains disc-derived game icon and interrupted-setup repairs. CI and owner verification pending. Corrects pre-1980 bundled-file ZIP metadata rejection; d83eedd source/UI and runtime checks passed before packaging failed."
+    "description": "Repairs future source mtimes behind the CMake loop, uses 80% desktop thread budgets and displays build stage/detail/workers/elapsed. Retains disc-derived game icon and interrupted-setup repairs. CI and owner verification pending. Corrects pre-1980 bundled-file ZIP metadata rejection; d83eedd source/UI and runtime checks passed before packaging failed. Adds multi-BIN (per-track) CUE import; player and CI verification pending."
   },
   "checks": [
+    {
+      "id": "N2-MULTIBIN-CUE",
+      "title": "Import and play a per-track (multi-BIN) CUE",
+      "area": "Disc import",
+      "required": true,
+      "priority": "high",
+      "steps": [
+        "Install the complete passing dev artifact for this candidate with the launcher and game closed. Preserve .local and your saves.",
+        "Choose your per-track USA CUE (11 BINs). Also try choosing one of its BIN files instead; the launcher should find the same CUE.",
+        "Confirm verification succeeds without any message about single-BIN CUEs, and that no file is added to or changed in the disc folder.",
+        "Click Play, allow the one expected game build update, and confirm the opening movies, title screen and title music.",
+        "Open Soundtrack and preview two original tracks; optionally use Asset folders and play one extracted music track."
+      ],
+      "expected": "The 11-BIN CUE verifies as the supported USA disc and plays like the merged image: movies, title and CD music work, and Soundtrack previews play the original tracks. The disc folder is unchanged.",
+      "context": "New multi-BIN import check. Local real-disc import, previews, assets and a diagnostics-build title run pass; player and CI verification pending. No campaign replay or save overwrite requested."
+    },
+    {
+      "id": "N2-MULTIBIN-ERRORS",
+      "title": "Clear messages for an incomplete per-track CUE",
+      "area": "Disc import",
+      "required": false,
+      "priority": "low",
+      "steps": [
+        "Optional. Copy the whole disc folder to a new test folder; never edit or remove your original files.",
+        "In the copy only, remove one audio BIN, then choose the copied CUE.",
+        "Restore that BIN in the copy and choose the copied CUE again."
+      ],
+      "expected": "With the BIN missing, the launcher names the missing BIN and asks to keep the CUE and all its BIN files together; nothing is imported. With it restored, verification succeeds.",
+      "context": "Optional message check on a copy. Automated tests cover the other refusal cases."
+    },
     {
       "id": "N2-TIMESTAMP-RESUME",
       "title": "Resume setup past CMake configuration",

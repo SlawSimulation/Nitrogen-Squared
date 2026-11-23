@@ -26,7 +26,8 @@
 > **Bring your own game.** You need the supported **USA CUE/BIN** of N2O: Nitrous
 > Oxide. The launcher verifies your disc and compiles the game privately on your
 > computer. Releases include no game code, game assets, music, saves or Sony BIOS.
-> Keep the matching CUE and BIN together and available after setup.
+> The CUE may use one BIN or one BIN per track. Keep the CUE and all of its BIN
+> files together and available after setup.
 
 ## Screenshots
 

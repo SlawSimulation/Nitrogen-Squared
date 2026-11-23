@@ -18,7 +18,7 @@ from runtime_compatibility import build_options, reusable_runtime
 
 
 def select_cue(selected: Path) -> Path:
-    from n2o_disc import parse_cue
+    from n2o_disc import read_cue
     selected=selected.resolve(strict=True)
     if selected.suffix.lower()==".cue":
         return selected
@@ -28,13 +28,13 @@ def select_cue(selected: Path) -> Path:
     for cue in selected.parent.iterdir():
         if cue.suffix.lower()==".cue" and cue.is_file():
             try:
-                image,_=parse_cue(cue)
-                if image.resolve()==selected:
+                # Any BIN of a single- or multi-BIN CUE identifies that CUE.
+                if any(f.path==selected for f in read_cue(cue).files):
                     matches.append(cue)
             except (OSError,ValueError):
                 continue
     if len(matches)!=1:
-        raise ValueError("Choose the CUE sheet that belongs to this BIN. Keep both files together.")
+        raise ValueError("Choose the CUE sheet that belongs to this BIN. Keep the CUE and all of its BIN files together.")
     return matches[0]
 
 

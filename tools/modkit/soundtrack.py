@@ -23,6 +23,8 @@ import shutil
 import tempfile
 import zipfile
 
+from n2o_disc import DiscImage  # tools/ is on sys.path whenever modkit is importable
+
 from . import GAME_ID, ModError
 from . import audio, manifest as manifests, validator
 
@@ -36,14 +38,16 @@ PLAYLIST_PREVIEW_SECONDS = 8
 
 
 def original_tracks(installation: Path) -> dict:
-    """{track number: (bin path, first sector, sector count)} from the verified import.
+    """{track number: (disc files, first sector, sector count)} from the verified import.
 
-    A track runs from INDEX 01 to the next track's INDEX 00 (or the image end),
-    which is exactly the slice the framework mounts for a disc track."""
+    A track runs from INDEX 01 to the next track's INDEX 00 (or the disc end),
+    which is exactly the slice the framework mounts for a disc track. Sectors
+    are absolute disc LBAs; `disc files` maps them to the BIN(s) holding them,
+    so single- and multi-BIN imports are read the same way."""
     try:
         record = json.loads((Path(installation) / "installation.json").read_text(encoding="utf-8"))
-        image = Path(record["bin"])
-        total = image.stat().st_size // audio.SECTOR
+        with DiscImage.from_record(record) as disc:
+            image, total = tuple(disc.files), disc.sectors
         tracks = record["tracks"]
     except (OSError, ValueError, KeyError, TypeError):
         raise ModError("Choose and verify your game disc first") from None
@@ -200,10 +204,12 @@ class SoundtrackProject:
     def _source_chunks(self, source: dict, originals: dict, start: int, length: int):
         """Yield raw CD-DA bytes [start, start+length) of one slot source."""
         if source["kind"] == "disc":
-            image, first, sectors = originals[source["track"]]
-            path, base, size = image, first * audio.SECTOR, sectors * audio.SECTOR
-        else:
-            path, base, size = self.replacements / source["file"], 0, source["sectors"] * audio.SECTOR
+            files, first, sectors = originals[source["track"]]
+            length = max(0, min(length, sectors * audio.SECTOR - start))
+            with DiscImage(files) as disc:
+                yield from disc.read_bytes(first * audio.SECTOR + start, length)
+            return
+        path, base, size = self.replacements / source["file"], 0, source["sectors"] * audio.SECTOR
         length = max(0, min(length, size - start))
         with open(path, "rb") as handle:
             handle.seek(base + start)

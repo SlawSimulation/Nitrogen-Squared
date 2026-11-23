@@ -23,6 +23,8 @@ build or cache. No uploaded-disc assets may be used for branding or setup art.
 1. Extract the complete Nitrogen-Squared folder and run launcher.exe.
 2. Select the supported local CUE/BIN. CUE is preferred because it identifies the
    data and audio tracks; a BIN selection requires its unique matching CUE beside it.
+   A CUE may keep the disc in one BIN or in one BIN per track; selecting any of
+   its BINs finds the CUE. Keep every BIN the CUE names beside it.
 3. Verify the layout, full image hash, boot identity and extracted executable hashes.
 4. Download pinned preparation tools privately, fetch the pinned framework and
    dependencies, generate and compile the player's game, then start play.
