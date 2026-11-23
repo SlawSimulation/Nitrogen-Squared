@@ -381,6 +381,11 @@ def main():
         subprocess.run(["c++", "-std=c++17", "-fsyntax-only", "-DPSX_SDL3=1",
                         runtime_include, "-I" + str(sdl_include_dir(work / "build")),
                         str(qualification / "normal_controller.cpp")], check=True)
+        # The display measurement fixture links against production objects on
+        # the player's PC; check it against the same pinned headers here.
+        subprocess.run(["c++", "-std=c++17", "-fsyntax-only", "-Wall", "-Wextra", "-DPSX_SDL3=1",
+                        runtime_include, "-I" + str(sdl_include_dir(work / "build")),
+                        str(ROOT / "tools/measurement/display_fixture.cpp")], check=True)
         print("Original qualification helper syntax checks passed", flush=True)
         subprocess.run(["python", str(ROOT / "tools/check_renderer.py"),
                         "--framework", str(framework), "--runtime-build", str(work / "build"),

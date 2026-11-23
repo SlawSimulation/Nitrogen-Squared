@@ -1892,6 +1892,7 @@ no remote mutation, promotion, tag, release or rerun was performed.
 
 Phase 0 framework mod activation (synthetic and real USA disc) and the Phase 1
 mod manager are recorded in [VALIDATION_MODS.md](VALIDATION_MODS.md); multi-BIN CUE
-import is recorded in [VALIDATION_DISC.md](VALIDATION_DISC.md). None of
+import is recorded in [VALIDATION_DISC.md](VALIDATION_DISC.md); display
+measurement tooling is recorded in [VALIDATION_DISPLAY.md](VALIDATION_DISPLAY.md). None of
 them changes VERSION, native selection, clocks or coverage (38.4156% linked /
 61.5844% outside).

@@ -2,6 +2,40 @@
 
 ## Current acceptance and update checks
 
+**Display V0 — baseline measurement tooling (feature branch, measurement only).**
+V0 adds tools/measurement: a measurement executable linked separately against
+your existing normal game build, and a driver that runs an original controller
+route at each window size, display mode, world render percentage and VSync
+setting. It does not change or rebuild the player executable, its rendering,
+game speed, saves, settings, mods or disc files; nothing needs reinstalling.
+Results stay in your folder's .local/measurements. Details and the memory
+calculation are in docs/VALIDATION_DISPLAY.md.
+
+Run on the GTX 1080 Ti / 49-inch ultrawide PC (check N2-DISPLAY-BASELINE):
+1. Use a Nitrogen-Squared folder whose game has already been prepared and
+   played once. Close the launcher and the game.
+2. Get the feature/display-v0-v1 source into a separate folder (once it has
+   been published for you), for example C:\N2-measure.
+3. In a terminal, using your installation's own Python:
+   "D:\Games\Nitrogen-Squared\support\python\python.exe" C:\N2-measure\tools\measurement\measure_display.py --installation "D:\Games\Nitrogen-Squared" --list-displays
+   This only lists what Windows reports. Then run --preset quick (about 35
+   minutes) or --preset full (about 95 minutes), and finally --preset stutter
+   (about 30 minutes, three long routes through the level-2 entry). Leave the
+   PC alone while windows open and close; audio is muted by default.
+4. Send report.json and summary.md from the printed output folder. Captures
+   are game imagery: keep them private, review them locally if useful.
+
+What it measures: game cadence and frame times per scene, CPU and GPU time,
+presentation spacing on your 144 Hz panel with VSync on and off (and 120/60 Hz
+when listed), repeated frames and hitches with their likely cause, GPU memory,
+the actual 3D raster at 100% and 200%, and golden screenshots of the original
+presentation. Windowed sizes larger than your display are reported as
+oversized, not as tested display modes; exclusive modes are only tested when
+your display lists them. Locally the tooling passed with the software renderer
+only (deterministic goldens, long route to level 2), so its OpenGL paths are
+first exercised on your PC. V1 display options start only after you review
+these results. Coverage remains 38.4156% linked / 61.5844% outside.
+
 **0.2.2 development candidate — multi-BIN CUE disc import.**
 Disc import now accepts a CUE that splits the disc across several BINs, such as
 the owner's per-track USA dump: 11 BINs, Track 01 MODE2/2352 and Tracks 02–11
@@ -1041,9 +1075,24 @@ Instructions for future maintainers and assistants:
     "runtime": "Windows / Linux x64 \u00b7 USA disc",
     "cart": "",
     "createdAt": "2026-11-10",
-    "description": "Repairs future source mtimes behind the CMake loop, uses 80% desktop thread budgets and displays build stage/detail/workers/elapsed. Retains disc-derived game icon and interrupted-setup repairs. CI and owner verification pending. Corrects pre-1980 bundled-file ZIP metadata rejection; d83eedd source/UI and runtime checks passed before packaging failed. Adds multi-BIN (per-track) CUE import; player and CI verification pending."
+    "description": "Repairs future source mtimes behind the CMake loop, uses 80% desktop thread budgets and displays build stage/detail/workers/elapsed. Retains disc-derived game icon and interrupted-setup repairs. CI and owner verification pending. Corrects pre-1980 bundled-file ZIP metadata rejection; d83eedd source/UI and runtime checks passed before packaging failed. Adds multi-BIN (per-track) CUE import; player and CI verification pending. Adds V0 display measurement tooling (no runtime change)."
   },
   "checks": [
+    {
+      "id": "N2-DISPLAY-BASELINE",
+      "title": "Run the V0 display measurements on the ultrawide PC",
+      "area": "Display measurement (V0)",
+      "required": true,
+      "priority": "high",
+      "steps": [
+        "With the launcher and game closed, run measure_display.py --list-displays with your installation's Python and --installation pointing at your Nitrogen-Squared folder.",
+        "Run --preset quick (or --preset full), then --preset stutter. Leave the PC idle while windows open and close.",
+        "Confirm each run prints completed, or a stated reason such as an unlisted mode; nothing in your folder outside .local/measurements changes.",
+        "Send report.json and summary.md; keep the captured images private."
+      ],
+      "expected": "Reports list your GPU, displays and modes, golden determinism, per-scene cadence and frame times, 144 Hz presentation with VSync on and off, memory and the actual 3D raster. Unsupported sizes are marked oversized or not tested, never as tested.",
+      "context": "V0 measurement only: no game rebuild, no setting, save or disc change. V1 starts after review. No campaign replay requested."
+    },
     {
       "id": "N2-MULTIBIN-CUE",
       "title": "Import and play a per-track (multi-BIN) CUE",
