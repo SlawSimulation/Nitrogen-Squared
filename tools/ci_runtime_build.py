@@ -177,6 +177,55 @@ def run_modkit(binary: Path, work: Path, config: Path, mods_on: bool):
     print("Modkit passed (NITROGEN_MODS=ON): install, framework validation, staging, activation and restore", flush=True)
 
 
+def run_soundtrack(binary: Path, work: Path, config: Path):
+    """Export an original synthetic soundtrack and apply it in the real runtime.
+
+    The synthetic disc has no audio tracks, so every slot is a replacement. The
+    plugin is linked into every build; the framework must verify the shipped
+    resources and accept the ten-track CD-DA playlist."""
+    import hashlib, shutil, struct, tempfile
+    from mod_probe import launch, stage_runtime
+    from modkit.package import ModStore
+    from modkit.soundtrack import SoundtrackProject, SLOTS
+    root = work / "soundtrack"
+    shutil.rmtree(root, ignore_errors=True)
+    root.mkdir(parents=True)
+    staged = stage_runtime(binary, Path(tempfile.mkdtemp(prefix="soundtrack-runtime-", dir=root)) / "runtime")
+    build = (staged, hashlib.sha256(staged.read_bytes()).hexdigest())
+    project = SoundtrackProject(root / "project", root / "no-installation", game_id="SYNTHETIC")
+    for slot in SLOTS:
+        samples = bytes(((slot * 37 + i) % 256) for i in range(44100 * 4 + slot * 2352))  # original pattern
+        wave = root / f"slot-{slot}.wav"
+        wave.write_bytes(b"RIFF" + struct.pack("<I", 36 + len(samples)) + b"WAVEfmt " +
+                         struct.pack("<IHHIIHH", 16, 1, 2, 44100, 176400, 4, 16) +
+                         b"data" + struct.pack("<I", len(samples)) + samples)
+        project.import_wave(slot, wave)
+    project.set_details({"id": "synthetic.soundtrack", "name": "Synthetic soundtrack"})
+    exported = project.export(build)
+    store = ModStore(root / "store", game_id="SYNTHETIC")
+    record = store.install(Path(exported["path"]), build)
+    if record["validation"] != "framework" or len(record["bound_resources"]) != 11:
+        raise RuntimeError(f"Soundtrack package was not fully verified: {record}")
+    store.set_enabled(record["id"], True, build)
+    store.stage(staged.parent, build)
+    alive, code, log = launch(staged, config, work / "mod-probe-zero-sectors.bin", root / "unused-receipt.json", 12.0)
+    applied = [line for line in log.splitlines() if "nitrogen: soundtrack" in line]
+    expected = [f"nitrogen: soundtrack track {slot} lba" for slot in SLOTS]
+    if not alive or not applied or "playlist applied" not in applied[0] or \
+            [line.rsplit(" lba", 1)[0] + " lba" for line in applied[1:]] != expected:
+        raise RuntimeError("Soundtrack playlist was not applied:\n" + log[-6000:])
+    for slot, line in zip(SLOTS, applied[1:]):
+        sectors = int(line.rsplit("sectors ", 1)[1])
+        if sectors != -(-(44100 * 4 + slot * 2352) // 2352):
+            raise RuntimeError(f"Slot {slot} has {sectors} sectors:\n" + "\n".join(applied))
+    store.set_enabled(record["id"], False, build)
+    store.stage(staged.parent, build)
+    alive, code, log = launch(staged, config, work / "mod-probe-zero-sectors.bin", root / "unused-receipt.json", 12.0)
+    if not alive or "nitrogen: soundtrack" in log:
+        raise RuntimeError("Disabling the soundtrack did not restore an unmodded launch:\n" + log[-6000:])
+    print("Soundtrack passed: export, framework verification, staging, ten-track playlist and restore", flush=True)
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--framework", type=Path, default=ROOT / ".local/psxrecomp")
@@ -290,6 +339,7 @@ def main():
     run_mod_probe(runtime_binary, work, config, [
         ("off-no-package", None, "running"), ("off-enabled-probe", "enabled", "refused")])
     run_modkit(runtime_binary, work, config, mods_on=False)
+    run_soundtrack(runtime_binary, work, config)
     subprocess.run(["cmake", "-S", str(ROOT), "-B", str(work / "build"), "-DNITROGEN_MODS=ON"], check=True)
     subprocess.run(["cmake", "--build", str(work / "build"), "--config", "Release",
                     "--target", "nitrogen-runtime", "--parallel", "2"], check=True)

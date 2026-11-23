@@ -205,6 +205,30 @@ async fn choose_mod(
     .map_err(|e| e.to_string())?
 }
 #[tauri::command]
+async fn choose_wav(
+    slot: u32,
+    app: tauri::AppHandle,
+    bridge: tauri::State<'_, Arc<Bridge>>,
+) -> Result<Value, String> {
+    // The picker only selects a local WAVE file; the Python service validates it.
+    let bridge = bridge.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(path) = app
+            .dialog()
+            .file()
+            .set_title("Select replacement audio (WAV)")
+            .add_filter("WAV audio, 44.1 kHz 16-bit stereo", &["wav"])
+            .blocking_pick_file()
+        else {
+            return Ok(Value::Null);
+        };
+        let path = path.into_path().map_err(|_| "Select a local .wav file")?;
+        bridge.request("soundtrack_import", json!({"slot":slot,"path":path}))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+#[tauri::command]
 fn host_info(bridge: tauri::State<'_, Arc<Bridge>>) -> Value {
     json!({"testing":bridge.testing,"channel":option_env!("N2_LAUNCHER_CHANNEL").unwrap_or("dev")})
 }
@@ -277,7 +301,7 @@ fn main() {
     }
     let app=tauri::Builder::default().plugin(tauri_plugin_dialog::init())
         .setup(|app|{let bridge=backend(app.handle())?;app.manage(bridge);Ok(())})
-        .invoke_handler(tauri::generate_handler![request,choose_disc,choose_mod,host_info,lifecycle])
+        .invoke_handler(tauri::generate_handler![request,choose_disc,choose_mod,choose_wav,host_info,lifecycle])
         .on_window_event(|window,event|if let tauri::WindowEvent::CloseRequested{api,..}=event {
             api.prevent_close();let app=window.app_handle().clone();let bridge=app.state::<Arc<Bridge>>().inner().clone();
             std::thread::spawn(move||match bridge.request("close",json!({})) {

@@ -1,6 +1,7 @@
 # Mods: framework packages and the Nitrogen mod manager
 
 Players install `.psxmod` packages from the launcher's **Mods** page. The
+**Soundtrack** page builds soundtrack packages; see [SOUNDTRACK.md](SOUNDTRACK.md). The
 pinned framework loads them; Nitrogen keeps them in permanent storage and
 hands the enabled ones to the game build before each launch. Sections from
 [Package installation](#package-installation) onward describe that manager;

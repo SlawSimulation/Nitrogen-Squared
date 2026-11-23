@@ -81,8 +81,11 @@ def runtime_build(work: Path):
         return None
 
 
-def state_text(enabled: list[dict]) -> str:
-    """The framework's format-2 selection file for these package records."""
+def state_text(enabled: list[dict], resource_paths: dict | None = None) -> str:
+    """The framework's format-2 selection file for these package records.
+
+    resource_paths maps (package id, feature id) to {resource id: absolute path}
+    for verified resources the package ships (see bind_resources)."""
     q = json.dumps
     lines = ["format_version = 2", ""]
     for record in enabled:
@@ -91,7 +94,34 @@ def state_text(enabled: list[dict]) -> str:
         for feature in record["features"]:
             lines += ["[[feature]]", f"package_id = {q(record['id'])}", f"id = {q(feature['id'])}",
                       "enabled = true", ""]
+            paths = (resource_paths or {}).get((record["id"], feature["id"]))
+            if paths:
+                lines += ["[feature.resources]"] + [f"{q(k)} = {q(v)}" for k, v in sorted(paths.items())] + [""]
     return "\n".join(lines)
+
+
+def bind_resources(package_dir: Path, resources: list[dict]) -> dict:
+    """Shipped files for verified resources: resources/<id>.<extension>, exactly
+    matching the declared size and SHA-256. Returns {resource id: relative path}.
+
+    The framework only reads verified resource bytes from a player-selected path
+    (it forbids a package default for them). The launcher selects the package's
+    own shipped copy on the player's behalf when it stages the package."""
+    bound = {}
+    for resource in resources:
+        if not resource.get("sha256"):
+            continue
+        matches = sorted(p for p in (package_dir / "resources").glob(resource["id"] + ".*")
+                         if p.is_file() and p.stem == resource["id"])
+        if not matches:
+            continue
+        if len(matches) > 1:
+            raise ModError(f"Package ships more than one file for resource {resource['id']}")
+        path = matches[0]
+        if path.stat().st_size != resource["size"] or _sha256(path) != resource["sha256"]:
+            raise ModError(f"Shipped file for resource {resource['id']} does not match its declared size and SHA-256")
+        bound[resource["id"]] = path.relative_to(package_dir).as_posix()
+    return bound
 
 
 class ModStore:
@@ -158,8 +188,13 @@ class ModStore:
         for record in records:
             required = sorted({p["id"] for p in record["plugins"]})
             missing = [] if plugins is None else [p for p in required if p not in plugins]
+            unbound = [r["id"] for r in record.get("resources", []) if r.get("required")
+                       and r["id"] not in record.get("bound_resources", {})]
             if not (not record["targets"] or "*" in record["targets"] or self.game_id in record["targets"]):
                 state, detail = "other-game", "Made for " + ", ".join(record["targets"])
+            elif unbound:
+                state, detail = "needs-files", ("Needs files chosen in a resource picker, which this launcher "
+                                                "does not offer yet: " + ", ".join(unbound))
             elif record["id"] in errors:
                 state, detail = "invalid", "The game's package reader refused it: " + errors[record["id"]]
             elif plugins is None:
@@ -187,6 +222,7 @@ class ModStore:
                     raise ModError(f"{info.name} {info.version} is already installed")
                 raise ModError(f"Package id {info.id} is already installed (version {', '.join(versions) or 'unknown'}). "
                                f"Remove it before installing version {info.version}.")
+            bound = bind_resources(work / "package", list(info.resources))
             validation = "basic"
             if build:
                 errors = validator.framework_errors(build[0], [(work / "package").resolve()])
@@ -194,7 +230,7 @@ class ModStore:
                     raise ModError("The game's package reader refused this manifest: " + validator.reason(errors[0]))
                 validation = "framework"
             files = sum(1 for p in (work / "package").rglob("*") if p.is_file())
-            record = dict(info.summary(), schema=SCHEMA, validation=validation, files=files,
+            record = dict(info.summary(), schema=SCHEMA, validation=validation, files=files, bound_resources=bound,
                           archive=dict(name=archive.name, sha256=_sha256(archive), size=archive.stat().st_size),
                           installed_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
             destination = self.packages_dir / info.id / info.version
@@ -272,12 +308,20 @@ class ModStore:
             shutil.move(str(fresh), str(installed))
             state = mods / STATE
             backup = (receipt or {}).get("backup")
+            paths = {}
+            for record in selected:
+                root = (installed / record["id"] / record["version"]).resolve()
+                bound = record.get("bound_resources", {})
+                for resource in record.get("resources", []):
+                    if resource["id"] in bound:
+                        paths.setdefault((record["id"], resource["feature"]), {})[resource["id"]] = \
+                            str(root / bound[resource["id"]])
             if selected:
                 if receipt is None and state.exists():
                     backup = f"{STATE}.before-nitrogen-mods-{datetime.now().strftime('%Y%m%d%H%M%S')}"
                     os.replace(state, mods / backup)
                 temporary = mods / (STATE + ".tmp")
-                temporary.write_text(state_text(selected), encoding="utf-8", newline="\n")
+                temporary.write_text(state_text(selected, paths), encoding="utf-8", newline="\n")
                 os.replace(temporary, state)
                 _write_json(receipt_path, dict(schema=SCHEMA, backup=backup,
                                                packages=[dict(id=r["id"], version=r["version"]) for r in selected]))

@@ -52,13 +52,15 @@ class Manifest:
     targets: tuple = ()
     features: tuple = ()
     plugins: tuple = ()
+    resources: tuple = ()
     channel: str = "stable"
     extra: dict = field(default_factory=dict, compare=False, repr=False)
 
     def summary(self) -> dict:
         return dict(format_version=self.format_version, id=self.id, version=self.version, name=self.name,
                     author=self.author, description=self.description, license=self.license,
-                    targets=list(self.targets), features=list(self.features), plugins=list(self.plugins))
+                    targets=list(self.targets), features=list(self.features), plugins=list(self.plugins),
+                    resources=list(self.resources))
 
     def targets_game(self, game_id: str) -> bool:
         """A package without [[target]] makes no game claim; '*' is generic."""
@@ -107,10 +109,23 @@ def parse(text: str) -> Manifest:
                     for p in table_list("plugin"))
     if any(not valid_id(p["id"]) for p in plugins):
         raise ModError("Plugin ids must be valid")
+    resources = []
+    for r in table_list("resource"):
+        size, sha = r.get("size"), r.get("sha256")
+        verified = size is not None or sha is not None
+        if verified and (type(size) is not int or size <= 0 or not isinstance(sha, str)
+                         or re.fullmatch(r"[0-9a-f]{64}", sha) is None):
+            raise ModError("Verified resources need a positive size and a lowercase SHA-256")
+        resources.append(dict(id=_text(r.get("id"), "resource.id"), feature=_text(r.get("feature"), "resource.feature"),
+                              format=_text(r.get("format"), "resource.format"), required=bool(r.get("required", False)),
+                              size=size if verified else None, sha256=sha if verified else None))
+    if any(not valid_id(r["id"]) for r in resources):
+        raise ModError("Resource ids must be valid")
     return Manifest(format_version=fmt, id=data["id"], version=data["version"], name=name,
                     author=_text(data.get("author"), "author"), description=_text(data.get("description"), "description"),
                     license=_text(data.get("license"), "license"), targets=targets, features=features,
-                    plugins=plugins, channel=_text(data.get("channel"), "channel") or "stable", extra=data)
+                    plugins=plugins, resources=tuple(resources),
+                    channel=_text(data.get("channel"), "channel") or "stable", extra=data)
 
 
 def read(path: Path) -> Manifest:

@@ -12,6 +12,7 @@ const STATUS = {
   'missing-plugins': ['danger', 'circle-x', 'Missing plugins'],
   invalid: ['danger', 'circle-x', 'Invalid package'],
   'other-game': ['danger', 'circle-x', 'Different game'],
+  'needs-files': ['danger', 'circle-x', 'Needs files'],
 };
 
 function card(p, blocked) {

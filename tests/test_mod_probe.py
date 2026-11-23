@@ -89,10 +89,16 @@ class ProbeBuildWiringTests(unittest.TestCase):
     def test_option_is_off_by_default_and_isolated(self):
         cmake = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
         self.assertRegex(cmake, r'option\(NITROGEN_MODS "[^"]*" OFF\)')
-        self.assertIn("if(NITROGEN_MODS)\n    include(cmake/nitrogen_mods.cmake)\nendif()", cmake)
+        self.assertIn('if("${PSXRECOMP_ROOT}/runtime/src/mod_runtime.cpp" IN_LIST _nitrogen_sources OR NITROGEN_MODS)\n'
+                      "    include(cmake/nitrogen_mods.cmake)\nendif()", cmake)
         module = (ROOT / "cmake/nitrogen_mods.cmake").read_text(encoding="utf-8")
-        self.assertEqual(re.findall(r'"\$\{CMAKE_CURRENT_SOURCE_DIR\}/([^"]+)"', module), ["native/mods/mod_probe.cpp"])
-        self.assertNotIn("PSXRECOMP_ROOT", module)
+        self.assertEqual(re.findall(r'"\$\{CMAKE_CURRENT_SOURCE_DIR\}/([^"]+)"', module),
+                         ["native/mods/soundtrack.cpp", "native/mods/mod_probe.cpp"])
+        # The probe is development-only: it is linked solely when the option is ON.
+        self.assertIn("if(NITROGEN_MODS)\n        target_sources(nitrogen-runtime PRIVATE ${_nitrogen_development_mod_sources})",
+                      module)
+        # The module only checks that the framework mod runtime is present; it adds no framework source.
+        self.assertEqual(re.findall(r"PSXRECOMP_ROOT\}/[^\"]+", module), ["PSXRECOMP_ROOT}/runtime/src/mod_runtime.cpp"])
 
     def test_plugin_registers_id_without_guest_or_dispatch_changes(self):
         source = (ROOT / "native/mods/mod_probe.cpp").read_text(encoding="utf-8")

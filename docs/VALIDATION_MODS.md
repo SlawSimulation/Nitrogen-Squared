@@ -151,3 +151,53 @@ Notes and limits:
 - Existing behavior observed, not changed: the WebView2 profile is stored in
   `%LOCALAPPDATA%\org.nitrogen-squared.launcher`, outside the portable folder.
 - Linux packaging and GitHub platform CI have not run.
+
+## Phase 2 soundtrack editor (dev, unreleased) — 2026-11-23
+
+Adds `tools/modkit/audio.py` (WAVE validation and CD-DA conversion),
+`tools/modkit/soundtrack.py` (ten-slot project, previews, export), verified
+resource binding in the store, launcher Soundtrack page and service commands,
+a native `.wav` picker, and the trusted plugin `native/mods/soundtrack.cpp`
+(`nitrogen.soundtrack`). See [SOUNDTRACK.md](SOUNDTRACK.md). The plugin is
+linked into every build that contains the framework mod runtime; the
+development probe still needs NITROGEN_MODS=ON. CMakeLists.txt, cmake/ and
+native/ changed, so the compiled-game input fingerprint is now
+618eea77d31752daf5d9bf5477b1e5ed62f93c124c2582df32c8d7acf5ff6346 and player
+builds rebuild once. No framework file, VERSION, native selection or clock
+changes; coverage remains 38.4156% linked / 61.5844% outside.
+
+Audio facts (real USA disc, read-only): ten CD-DA tracks 2–11, 44.1 kHz
+16-bit stereo, whole 2,352-byte sectors, 229.93–454.99 s, 481 MiB total. Each
+extractor WAVE payload equals its disc sectors from INDEX 01 to the next INDEX
+00. The 256 MiB package limit caps replacement audio at about 25 minutes per
+package.
+
+| Check | Result |
+| --- | --- |
+| 15 synthetic soundtrack tests (WAVE acceptance/refusal, unchanged-sample conversion and padding, pregap-free slices, editing, previews, budget, export contents, tampered/stripped packages, staging of verified resources, launcher service) and updated Phase 0/1 tests | pass |
+| Full Python suite, pinned tools on PATH | 212 tests, no skips, pass |
+| Launcher `npm test`, build, Playwright (11 tests, 2 new soundtrack tests) | pass |
+| Synthetic runtime CI (default build, mods OFF): soundtrack export, framework verification of 11 resources, ten-track playlist with exact per-slot sector counts, disable restores; all earlier smokes | pass |
+| Real build: export validated by the game's manifest parser; plugin applied the playlist; framework mounted disc entries with their exact lengths (track 3 = 19,946 sectors) | pass |
+| Real game, tone fixtures captured with SDL disk audio: no mod = no tone; slot-2 replacement plays at the title; swapping slots 2/3 plays the moved file | pass |
+| Mounted original track in slot 2 (diagnostics CD trace): playlist track 2 played from LBA 499 to 19,361, then the game chose playlist track 6 | pass |
+| Packaged Windows launcher (Rust/MSVC rebuilt, 2,518-file package): Soundtrack page, 30 s preview equal to disc bytes, native WAV picker replacement, move, 48 kHz refusal message, Export and install, Mods Compatible, player build linking only `nitrogen.soundtrack`, Play staged it and the title played the replacement; disabling restored no-tone play with empty `installed/` | pass |
+
+Findings and limits:
+
+- The game chooses the next title/attract track itself. With a 40 s or 270 s
+  replacement in slot 2 it continued with slot 3; in a diagnostics run it chose
+  track 6 after a mounted slot. This is the game's behavior with any playlist.
+- Not verified: the in-game Audio menu track selection and Play in order,
+  pause/resume, the Music and Master volume controls, and save states with a
+  replacement playlist. These need in-game controller input. The disk-audio
+  capture showed no change for Master volume 50 versus 100, so it cannot
+  measure volume. By code inspection, replacement and original tracks share
+  the CD controller's decode volume, SPU mixing and save-state serialization.
+- The in-game Audio menu still shows the original track names.
+- Rust was compiled locally; GitHub platform CI has not run (nothing pushed).
+  Real-game runs used the software renderer and SDL disk audio on this host.
+- Test-setup errors made and corrected during packaged testing: a seeded
+  launcher state with a UTF-8 BOM and a copied recompiler cache from another
+  folder. Neither is shipped code. A recompiler cache copied with a moved
+  installation is not rebuilt automatically; this is existing behavior.
