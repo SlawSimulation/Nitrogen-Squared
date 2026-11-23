@@ -21,6 +21,9 @@ from portable_launcher import Backend, instance_lock
 from portable_support import Layout, write_json
 from portable_update import latest_release, stage_release, start_updater
 from runtime_paths import repair_portable_saves
+from modkit import ModError
+from modkit.package import ModStore, runtime_build
+from modkit.soundtrack import SoundtrackProject
 from launcher_presentation import (KEYBOARD, read_options, save_option, read_launcher_preferences,
     set_accent, read_release_cache, release_list, fetch_release_history, progress_summary, BUILD_STAGES)
 
@@ -45,6 +48,11 @@ class Service:
         self.started_at = None
         self.stage = ''
         self.workers = ''
+        self.mods = ModStore(layout.local/'mods')
+        self.mods_revision = 0
+        self.soundtrack = SoundtrackProject(layout.local/'soundtrack', layout.installation)
+        self.soundtrack_revision = 0
+        self.preview_process = None
         if self.recovery:
             self.title = 'Restore previous version'
             self.detail = 'The previous update did not finish. Your game and saves are kept.'
@@ -70,6 +78,7 @@ class Service:
                 imported=(self.layout.installation/'installation.json').is_file(),
                 extracted=(self.layout.local/'game').is_dir(), options=read_options(self.layout.local),
                 accent=read_launcher_preferences(self.layout.local)['accent'], keyboard=KEYBOARD,
+                mods_revision=self.mods_revision, soundtrack_revision=self.soundtrack_revision,
                 releases=self.releases, update=({'version':self.update['version']} if self.update else None))
 
     def publish(self):
@@ -138,6 +147,50 @@ class Service:
         if os.name == 'nt': os.startfile(str(path))
         else: subprocess.Popen(['xdg-open',str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
+    def mod_listing(self):
+        # A running or reused game build is checked; one being rebuilt is not.
+        build=None if self.busy and self.phase in ('setup','build') else runtime_build(self.layout.work)
+        try: packages,problem=self.mods.status(build),None
+        except ModError as e: packages,problem=self.mods.status(None),str(e)
+        return dict(packages=packages,checked=bool(build) and problem is None,problem=problem,
+                    store=str(self.mods.root),revision=self.mods_revision)
+
+    def mod_change(self, change):
+        with self.mutex:
+            self.idle();result=change(runtime_build(self.layout.work));self.mods_revision+=1;self.publish()
+        return result
+
+    def soundtrack_change(self, change):
+        with self.mutex:
+            self.idle();result=change();self.soundtrack_revision+=1;self.publish()
+        return result
+
+    def stop_preview(self):
+        if os.name == 'nt':
+            import winsound
+            winsound.PlaySound(None, 0)
+        elif self.preview_process and self.preview_process.poll() is None:
+            self.preview_process.terminate()
+        self.preview_process = None
+
+    def play_preview(self, path):
+        """Play a preview WAVE through the operating system; no game launch."""
+        self.stop_preview()
+        if os.name == 'nt':
+            import winsound
+            winsound.PlaySound(str(path), winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT)
+            return
+        import shutil
+        player = next((shutil.which(n) for n in ('paplay', 'pw-play', 'aplay') if shutil.which(n)), None)
+        if not player: raise ValueError('Install PulseAudio, PipeWire or ALSA tools to preview audio.')
+        self.preview_process = subprocess.Popen([player, str(path)], stdin=subprocess.DEVNULL,
+                                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def soundtrack_slot(self, args):
+        slot = args.get('slot')
+        if type(slot) is not int: raise ValueError('Choose a soundtrack slot')
+        return slot
+
     def handle(self, command, args):
         args = args or {}
         if not isinstance(args,dict): raise ValueError('Invalid launcher arguments')
@@ -156,6 +209,64 @@ class Service:
             else:
                 if not (self.layout.installation/'installation.json').is_file(): raise ValueError('Choose and verify your disc first.')
                 self.begin('Extracting asset folders…',lambda:self.backend.action(assets=True))
+        elif command == 'mods': return self.mod_listing()
+        elif command == 'mod_install':
+            selected=args.get('path')
+            if not isinstance(selected,str) or not selected.lower().endswith('.psxmod'): raise ValueError('Choose a .psxmod package')
+            def install():
+                record=self.mods.install(Path(selected),runtime_build(self.layout.work))
+                with self.mutex: self.mods_revision+=1
+                self.notify('done',f"Installed {record['name']} {record['version']}. Enable it in Mods.")
+            self.begin('Installing mod…',install,phase='mods')
+        elif command == 'mod_enable':
+            package,enabled=args.get('id'),args.get('enabled')
+            if not isinstance(package,str) or type(enabled) is not bool: raise ValueError('Invalid mod selection')
+            self.mod_change(lambda build:self.mods.set_enabled(package,enabled,build))
+        elif command == 'mod_remove':
+            package=args.get('id')
+            if not isinstance(package,str): raise ValueError('Invalid mod package')
+            self.mod_change(lambda build:self.mods.remove(package))
+        elif command == 'soundtrack':
+            result = self.soundtrack.status()
+            result['revision'] = self.soundtrack_revision
+            result['exports'] = sorted(p.name for p in self.soundtrack.exports.glob('*.psxmod')) if self.soundtrack.exports.is_dir() else []
+            return result
+        elif command == 'soundtrack_import':
+            slot, selected = self.soundtrack_slot(args), args.get('path')
+            if not isinstance(selected, str) or not selected.lower().endswith('.wav'): raise ValueError('Choose a .wav file')
+            self.soundtrack_change(lambda: self.soundtrack.import_wave(slot, Path(selected)))
+        elif command == 'soundtrack_restore':
+            slot = self.soundtrack_slot(args)
+            self.soundtrack_change(lambda: self.soundtrack.restore(slot))
+        elif command == 'soundtrack_move':
+            slot, offset = self.soundtrack_slot(args), args.get('offset')
+            if offset not in (-1, 1) or type(offset) is not int: raise ValueError('Invalid move')
+            self.soundtrack_change(lambda: self.soundtrack.move(slot, offset))
+        elif command == 'soundtrack_reset':
+            self.soundtrack_change(self.soundtrack.reset)
+        elif command == 'soundtrack_details':
+            details = args.get('details')
+            if not isinstance(details, dict): raise ValueError('Invalid package details')
+            self.soundtrack_change(lambda: self.soundtrack.set_details(details))
+        elif command == 'soundtrack_preview':
+            slot = args.get('slot')
+            if slot is not None and type(slot) is not int: raise ValueError('Choose a soundtrack slot')
+            self.play_preview(self.soundtrack.preview(slot))
+        elif command == 'soundtrack_stop':
+            self.stop_preview()
+        elif command == 'soundtrack_export':
+            install = args.get('install') is True
+            def export():
+                build = runtime_build(self.layout.work)
+                result = self.soundtrack.export(build)
+                message = f"Exported {Path(result['path']).name}."
+                if install:
+                    record = self.mods.install(Path(result['path']), build)
+                    with self.mutex: self.mods_revision += 1
+                    message = f"Exported and installed {record['name']} {record['version']}. Enable it in Mods."
+                with self.mutex: self.soundtrack_revision += 1
+                self.notify('done', message)
+            self.begin('Exporting soundtrack…', export, phase='mods')
         elif command == 'stop':
             with self.mutex:
                 if not self.busy or self.phase == 'running': raise ValueError('Close the game window to return here.')
@@ -194,7 +305,9 @@ class Service:
                 start_updater(self.layout,None,self.launcher_pid)
         elif command == 'open':
             target=args.get('target')
-            if target in ('saves','game'):
+            if target == 'soundtrack-exports':
+                path=self.soundtrack.exports;path.mkdir(parents=True,exist_ok=True)
+            elif target in ('saves','game','mods'):
                 path=self.layout.local/target;path.mkdir(parents=True,exist_ok=True)
             elif target in ('setup.log','update.log'):
                 path=self.layout.local/target

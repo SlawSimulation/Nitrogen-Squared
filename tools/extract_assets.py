@@ -11,7 +11,7 @@ import tempfile
 import wave
 
 sys.path.insert(0,str(Path(__file__).resolve().parent))
-from n2o_disc import ROOT,SECTOR,USER,IsoReader,inspect,default_data_dir
+from n2o_disc import ROOT,SECTOR,USER,DiscImage,IsoReader,inspect,default_data_dir
 from portable_support import beneath,relative_path,sha256,write_json
 
 
@@ -64,11 +64,8 @@ def plan_files(entries,tracks,total_sectors):
 
 
 def raw_chunks(source,lba,sectors):
-    source.seek(lba*SECTOR)
-    while sectors:
-        count=min(sectors,256);data=source.read(count*SECTOR)
-        if len(data)!=count*SECTOR:raise ValueError("Disc changed or ended during extraction")
-        yield data;sectors-=count
+    """Raw 2,352-byte sectors by absolute LBA; a DiscImage spans every BIN of the CUE."""
+    yield from source.chunks(lba,sectors)
 
 
 def extract(installation: Path,destination: Path,identity=None,progress=print):
@@ -82,7 +79,7 @@ def extract(installation: Path,destination: Path,identity=None,progress=print):
     total=identity["bin_size"]//SECTOR
     end=current["tracks"][1].get("pregap") if len(current["tracks"])>1 else total
     if end is None:end=current["tracks"][1]["start"]
-    with IsoReader(Path(current["bin"]),end) as iso:
+    with DiscImage.from_record(current) as disc,IsoReader(disc,end) as iso:
         _,entries=iso.inventory()
     end,files,music=plan_files(entries,current["tracks"],total)
     destination.parent.mkdir(parents=True,exist_ok=True)
@@ -92,7 +89,7 @@ def extract(installation: Path,destination: Path,identity=None,progress=print):
         path=beneath(staging,name)
         outputs[name]=dict(size=path.stat().st_size,sha256=sha256(path))
     try:
-        with Path(current["bin"]).open("rb") as raw,IsoReader(Path(current["bin"]),end) as iso:
+        with DiscImage.from_record(current) as raw,IsoReader(raw,end) as iso:
             for row in files:
                 if row["representation"]=="audio-track-alias":continue
                 progress("Extracting "+row["output"])
@@ -123,7 +120,9 @@ def extract(installation: Path,destination: Path,identity=None,progress=print):
                         for chunk in raw_chunks(raw,pregap,track["lba"]-pregap):out.write(chunk)
                     record(name);track["pregap_output"]=name
         # Check the complete original again before publishing an atomic folder.
-        if sha256(Path(current["bin"]))!=current["bin_sha256"]:
+        with DiscImage.from_record(current) as disc:
+            changed=disc.sha256()!=current["bin_sha256"]
+        if changed:
             raise ValueError("Disc changed during extraction")
         manifest=dict(schema=1,kind="private-extracted-assets",game_id=current["game_id"],
                       bin_sha256=current["bin_sha256"],files=files,music=music,outputs=outputs,

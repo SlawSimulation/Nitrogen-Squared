@@ -16,6 +16,11 @@ The upstream probe labels its first-BIN hash `data_track_*`; for this merged lay
 those values also cover the entire file. Do not present them as Redump Track 1
 hashes or use them to reject a separately verified split-track image.
 
+The importer verifies a split per-track dump against the same identity: it lays
+the CUE's BIN files out in CUE order, checks the resulting absolute track layout
+and size, and hashes every disc sector in that order. For the owner's 11-BIN USA
+dump this equals the hash above; see [disc validation](VALIDATION_DISC.md).
+
 | Executable | File size | Load address | Entry address | Header text size |
 | --- | ---: | --- | --- | ---: |
 | SLUS_006.37 | 55,296 | 0x80010880 | 0x80012E24 | 53,248 |

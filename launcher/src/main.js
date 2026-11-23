@@ -5,8 +5,8 @@ import './theme.css';import './layout.css';import './components.css';import './n
 import { getCurrentWindow,LogicalSize } from '@tauri-apps/api/window';
 import logoUrl from '../assets/logo.png';import tunnelUrl from '../assets/tunnel.png';
 import {icon,esc,toast} from './ui.js';import {store} from './store.js';import {native} from './bridge.js';
-import * as home from './pages/home.js';import * as news from './pages/news.js';import * as settings from './pages/settings.js';
-const pages={home:{mod:home,label:'Home',icon:'house'},news:{mod:news,label:"What's New",icon:'newspaper'},settings:{mod:settings,label:'Settings',icon:'settings'}};
+import * as home from './pages/home.js';import * as news from './pages/news.js';import * as settings from './pages/settings.js';import * as mods from './pages/mods/mods.js';import * as soundtrack from './pages/soundtrack/soundtrack.js';
+const pages={home:{mod:home,label:'Home',icon:'house'},news:{mod:news,label:"What's New",icon:'newspaper'},mods:{mod:mods,label:'Mods',icon:'package'},soundtrack:{mod:soundtrack,label:'Soundtrack',icon:'music'},settings:{mod:settings,label:'Settings',icon:'settings'}};
 const nav=document.getElementById('nav'),view=document.getElementById('view');let current,token=0,leaving=[];
 nav.innerHTML=`<div class="brand" data-tauri-drag-region><img class="brand-logo nitrogen-brand" src="${logoUrl}" alt="Nitrogen Squared" /></div>${Object.entries(pages).map(([id,p])=>`<button class="nav-item" data-page="${id}" aria-label="${p.label}">${icon(p.icon)}<span class="nav-label">${p.label}</span><span class="nav-tip" aria-hidden="true">${p.label}</span></button>`).join('')}<div class="nav-spacer"></div><button class="task-pill" id="task-pill" hidden>${icon('loader-circle','spin')}<span class="task-name clip"></span><span class="task-pct"></span><span class="task-track"><span class="task-fill"></span></span></button><div class="build-label"><span id="version"></span><span class="test-badge">DEV CANDIDATE</span></div>`;
 function chrome(s){

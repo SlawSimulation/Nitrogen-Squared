@@ -1,0 +1,26 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later. Original Soundtrack page layout using the shared kit. */
+
+.st-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--space-4); }
+.st-head h1 { margin: 0; }
+.st-head p { margin: var(--space-1) 0 0; max-width: 60ch; }
+
+.st-list { display: flex; flex-direction: column; gap: var(--space-2); margin: 0; padding: 0; list-style: none; min-width: 0; }
+.st-row { display: grid; grid-template-columns: 2.5rem minmax(0, 1fr) auto auto; align-items: center; gap: var(--space-3);
+  padding: var(--space-2) var(--space-4); border-radius: var(--radius-md); min-width: 0; }
+.st-num { font-size: var(--text-lg); font-weight: var(--weight-semi); color: var(--color-text-2); }
+.st-main { display: flex; flex-direction: column; min-width: 0; }
+.st-label { min-width: 0; }
+.st-state { flex: none; }
+.st-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-1); }
+
+.st-export { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-5); border-radius: var(--radius-md); min-width: 0; }
+.st-export h2 { margin: 0; font-size: var(--text-lg); }
+.st-export p { margin: 0; }
+.st-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: var(--space-3); }
+.st-field { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.st-field .input { width: 100%; min-width: 0; }
+
+@media (max-width: 900px) {
+  .st-row { grid-template-columns: 2rem minmax(0, 1fr) auto; }
+  .st-actions { grid-column: 1 / -1; justify-content: flex-start; }
+}

@@ -20,7 +20,8 @@ Build diagnostically with the existing wrapper, adding:
 ```
 
 For a baseline route omit that include. Run `route.py --output .local/...`
-with `--disc` pointing to the verified merged BIN and `--binary` when using a
+with `--disc` pointing to the verified data-track BIN (the merged BIN, or
+Track 01 of a per-track dump) and `--binary` when using a
 preserved baseline executable. The input sequence covers opening movies, menus,
 first-level movement/firing and pause/resume. Seventeen exact-frame scanouts and
 aggregate device reports are saved privately. Compare decoded pixels, not file

@@ -18,7 +18,7 @@ from runtime_compatibility import build_options, reusable_runtime
 
 
 def select_cue(selected: Path) -> Path:
-    from n2o_disc import parse_cue
+    from n2o_disc import read_cue
     selected=selected.resolve(strict=True)
     if selected.suffix.lower()==".cue":
         return selected
@@ -28,13 +28,13 @@ def select_cue(selected: Path) -> Path:
     for cue in selected.parent.iterdir():
         if cue.suffix.lower()==".cue" and cue.is_file():
             try:
-                image,_=parse_cue(cue)
-                if image.resolve()==selected:
+                # Any BIN of a single- or multi-BIN CUE identifies that CUE.
+                if any(f.path==selected for f in read_cue(cue).files):
                     matches.append(cue)
             except (OSError,ValueError):
                 continue
     if len(matches)!=1:
-        raise ValueError("Choose the CUE sheet that belongs to this BIN. Keep both files together.")
+        raise ValueError("Choose the CUE sheet that belongs to this BIN. Keep the CUE and all of its BIN files together.")
     return matches[0]
 
 
@@ -176,6 +176,18 @@ class Backend:
         repair_portable_saves(self.layout)
         return env
 
+    def stage_mods(self):
+        """Give the game build the enabled packages from the durable .local/mods store.
+        No enabled package and no earlier staging leaves the build's mods folder untouched."""
+        from modkit.package import ModStore, runtime_build
+        build=runtime_build(self.layout.work)
+        if not build:return
+        staged=ModStore(self.layout.local/"mods").stage(build[0].parent,build)
+        if staged["packages"]:
+            self("Mods enabled: "+", ".join(f"{p['id']} {p['version']}" for p in staged["packages"]))
+        elif staged["changed"]:
+            self("No mods enabled; removed earlier mod selections from the game build.")
+
     def play(self):
         state=self.layout.state()
         env = self.layout.environment()
@@ -186,6 +198,7 @@ class Backend:
         else:
             self("Using your existing compatible game build.")
         repair_portable_saves(self.layout)
+        self.stage_mods()
         self("Starting game. Verifying your disc before launch…")
         # The child verifies the disc before it creates a game process. Relay
         # those lines immediately; only its actual PID receipt means Running.
