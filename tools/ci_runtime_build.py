@@ -103,6 +103,19 @@ def run_smoke(binary: Path, work: Path):
     return result
 
 
+def run_mod_probe(binary: Path, work: Path, config: Path, scenarios):
+    """Boot the real runtime unattended with original probe packages only."""
+    from mod_probe import scenario, check
+    disc = work / "mod-probe-zero-sectors.bin"  # original zero bytes; no disc identity
+    if not disc.exists():
+        disc.write_bytes(bytes(2352 * 16))
+    for name, variant, expect in scenarios:
+        result = scenario(binary, work, config, disc, "SYNTHETIC", name, variant)
+        check(result, expect)
+        if variant == "bad-manifest" and not result["ignored"]:
+            raise RuntimeError("Invalid probe manifest was not reported as ignored:\n" + result["log"][-6000:])
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--framework", type=Path, default=ROOT / ".local/psxrecomp")
@@ -211,10 +224,22 @@ def main():
         raise RuntimeError("Normal runtime execution manifest has the wrong profile")
     check_build_reuse(runtime_binary,work)
     print(f"Real runtime linked with original synthetic input: {runtime_binary}")
+    # Framework mod activation: the default build links no Nitrogen plugin,
+    # so an enabled probe package must refuse launch instead of being ignored.
+    run_mod_probe(runtime_binary, work, config, [
+        ("off-no-package", None, "running"), ("off-enabled-probe", "enabled", "refused")])
+    subprocess.run(["cmake", "-S", str(ROOT), "-B", str(work / "build"), "-DNITROGEN_MODS=ON"], check=True)
+    subprocess.run(["cmake", "--build", str(work / "build"), "--config", "Release",
+                    "--target", "nitrogen-runtime", "--parallel", "2"], check=True)
+    run_mod_probe(find_binary(work / "build", "NitrogenSquared-dev"), work, config, [
+        ("on-no-package", None, "running"), ("on-enabled-probe", "enabled", "active"),
+        ("on-disabled-probe", "disabled", "running"), ("on-bad-manifest", "bad-manifest", "running"),
+        ("on-missing-plugin", "missing-plugin", "refused")])
+    print("Framework mod probe passed: catalog scan, state selection, commit, activation and VBlank callbacks", flush=True)
     # Reuse this build tree to run the real runtime's SDL routing/mapping with
     # a virtual controller. This entry point never boots the synthetic guest.
     subprocess.run(["cmake", "-S", str(ROOT), "-B", str(work / "build"),
-                    "-DNITROGEN_INPUT_SMOKE=ON"], check=True)
+                    "-DNITROGEN_INPUT_SMOKE=ON", "-DNITROGEN_MODS=OFF"], check=True)
     subprocess.run(["cmake", "--build", str(work / "build"), "--config", "Release",
                     "--target", "nitrogen-runtime", "--parallel", "2"], check=True)
     result = run_smoke(find_binary(work / "build", "NitrogenSquared-input-test"), work)
