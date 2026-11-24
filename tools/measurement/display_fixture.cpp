@@ -51,6 +51,9 @@ extern "C" void nitrogen_window_report(int *, int *, int *, int *, int *, int *)
 // what the game side published. Weak so older runtimes still link.
 extern "C" void nitrogen_extras_request(int, int) __attribute__((weak));
 extern "C" int nitrogen_extras_snapshot(int *) __attribute__((weak));
+// V3 investigation (maintenance): the guest-visible half of widescreen, the
+// GTE projection squeeze, applied independently of the renderer.
+extern "C" void gte_set_display_aspect(int num, int den);
 extern "C" int nitrogen_option_get(int) __attribute__((weak));
 
 namespace {
@@ -111,6 +114,7 @@ struct Config {
     std::vector<uint64_t> ram_dumps_rel;   // maintenance: guest RAM snapshots (private output)
     struct ExtraRequest { uint64_t rel; int extra, value; };
     std::vector<ExtraRequest> extras_rel;  // maintenance: F1 game-extras requests
+    int gte_aspect_num = 0, gte_aspect_den = 0;   // maintenance: projection squeeze
 } cfg;
 bool load_config() {
     const char *path = std::getenv("NITROGEN_MEASURE_CONFIG");
@@ -139,6 +143,7 @@ bool load_config() {
         else if (key == "capture") { uint64_t f = 0; s >> f; cfg.captures.push_back(f); }
         else if (key == "capture_rel") { uint64_t f = 0; s >> f; cfg.captures_rel.push_back(f); }
         else if (key == "ram_dump_rel") { uint64_t f = 0; s >> f; cfg.ram_dumps_rel.push_back(f); }
+        else if (key == "gte_aspect") s >> cfg.gte_aspect_num >> cfg.gte_aspect_den;
         else if (key == "extra_rel") { Config::ExtraRequest r{}; s >> r.rel >> r.extra >> r.value; cfg.extras_rel.push_back(r); }
         else if (key == "scale_sample") { uint64_t f = 0; s >> f; cfg.scale_samples.push_back(f); }
         else if (key == "scale_rel") { uint64_t f = 0; s >> f; cfg.scale_rel.push_back(f); }
@@ -684,6 +689,10 @@ extern "C" bool __wrap_SDL_PollEvent(SDL_Event *event) {
                 }
                 instrumented = 1;
             }
+        // Re-applied every frame: the framework's own projection refresh may
+        // reset it when the game engages widescreen.
+        if (cfg.gte_aspect_num > 0 && cfg.gte_aspect_den > 0)
+            gte_set_display_aspect(cfg.gte_aspect_num, cfg.gte_aspect_den);
         for (const auto &r : cfg.extras_rel)
             if (r.rel == rel && nitrogen_extras_request) nitrogen_extras_request(r.extra, r.value);
         if (sample) { scale_sample(); instrumented = 1; }

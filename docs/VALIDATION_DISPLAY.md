@@ -1,5 +1,78 @@
 # Display validation
 
+## V3 stage 1: ultrawide investigation (dev, 0.2.2, no runtime change) — 2026-11-24
+
+Investigation only, approved by the owner; no widening is implemented. The
+game build, VERSION, native selection, coverage and clocks are unchanged
+(compiled-game inputs stay `35885323…`). The measurement fixture gains a
+maintenance key, `gte_aspect N D`, which applies the guest-visible half of
+the widescreen path (the framework's `gte_set_display_aspect` projection
+squeeze) independently of the renderer. All output stays in `.local`.
+
+### How wide views work today
+
+At a wide game area the host calls `gte_set_display_aspect`: the GTE squeezes
+X so the wider field projects into the game's original viewport (mode 1), and
+the presentation layer stretches it back. The game's own polygon clipping
+therefore already receives the full width. The squeeze is visible to the
+game's code, so gameplay effects were checked directly.
+
+### Static scan
+
+The framework's own `psxrecomp-analyze --scan-widescreen` (built privately,
+unchanged checkout) on the verified N2O.EXE found 80 GTE functions, 3 with the
+screen-extent signature (already covered by the framework's automatic mode),
+no bias/range X-window cull pairs, and 185 low-confidence (40-65%) width
+compares, mostly outside GTE code. N2O shows no classic screen-X cull window.
+
+### Real-game runs (software renderer, identical controller route)
+
+| Check | 4:3 | 21:9 | 32:9 |
+| --- | --- | --- | --- |
+| Route outcome | level 1 completed; bonus tally at frame 7689; level complete at 7823 | identical frames | identical frames |
+| Score and HUD values at sampled frames | reference | identical | identical |
+| Guest RAM at four gameplay checkpoints | reference | ~91-96 KB differ | ~94-101 KB differ |
+| Emulation-thread work, median gameplay frame | 1.000 | 0.998 | 0.990 |
+
+The RAM differences are all screen-space and drawing data: the two GPU packet
+buffers (about 58 KB each), the ordering tables (about 1.5 KB), projected
+screen X values in object and point tables (squeezed toward the centre; for
+example an object at X -92, off screen in 4:3, is at 80 in 32:9), packet
+pointers and primitive counts. No progression, score or timing value differs.
+This shows the current wide projection does not change gameplay on this route;
+it does not prove every level or event.
+
+Edges: 44 gameplay frames at 32:9 (every 30 frames) and two dense windows (every
+2 frames, frames 1962-2000 and 2350-2418) were inspected with the original 4:3
+boundary marked. Objects are drawn in the extra side areas and are followed to
+the real screen edge on both sides; none disappears at the old 4:3 boundary,
+and none was seen popping in at the sides (objects arrive from the tunnel's
+vanishing point). The darkest outer zone found (frame 1740) matches the unlit
+tunnel visible in the 4:3 frame itself, not missing walls.
+
+Non-gameplay screens rendered at 32:9: title and attract demo, main menu,
+game options wheel, ship select, start-level select, level-1 help pop-ups,
+memory-card load screen and high scores. Their final wide layout is the GL
+presentation layer's job, already checked by the owner in V1 (each Aspect
+looked right); the software renderer cannot show it.
+
+Two-player: the main menu offers "two player game" (turn-based, single
+full screen; it reached level 1 normally at 32:9) and "split two player game".
+The menu's step size is not reliable under the automated controller, so the
+split-screen mode was not reached; it remains unverified, as does any wide
+layout for it.
+
+### Limits
+
+- This host has OpenGL 1.1, so the presentation layer (stretch-back, HUD and
+  menu placement) was not exercised; the guest-side projection was. A software
+  OpenGL 3.3 driver was not installed here (running a downloaded extractor needs
+  the owner's permission).
+- One controller route through level 1; other levels, enemies and the boss are
+  not covered. Two-player split screen not reached.
+- Performance at 32:9 on the owner's PC was measured in V1: 59.94 fps gameplay,
+  emulation thread about 10.4 ms of 16.7 ms.
+
 ## V2 frame pacing and F1 bar (dev, 0.2.2, unreleased) — 2026-11-24
 
 VERSION stays 0.2.2; the compiled-game inputs change (one rebuild,
