@@ -17,9 +17,9 @@ enum { NITROGEN_ASPECT_AUTO, NITROGEN_ASPECT_4_3, NITROGEN_ASPECT_16_9, NITROGEN
  * when the game area is wider. Centre-anchored parts never move. */
 enum { NITROGEN_HUD_EDGES, NITROGEN_HUD_CENTRED_16_9 };
 /* Fullscreen (exclusive) display refresh. DESKTOP keeps the desktop's rate
- * (the original behaviour); SMOOTH_60 picks the highest listed rate at the
- * desktop resolution that is a whole multiple of the game's 59.94 Hz, so
- * every frame is shown for the same number of refreshes. Windowed and
+ * (the original behaviour); SMOOTH_60 picks, at the desktop resolution, the
+ * listed rate closest to the game's 59.94 Hz (the framework then paces the
+ * game to it), else the highest whole multiple of it. Windowed and
  * borderless always use the desktop's rate. */
 enum { NITROGEN_REFRESH_DESKTOP, NITROGEN_REFRESH_SMOOTH_60 };
 /* Call once on the main thread. A launcher-supplied path survives rebuilds. */

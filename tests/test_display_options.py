@@ -340,10 +340,14 @@ int main(){
  const double g=60000.0/1001.0;   // 59.94
  // The owner's 49-inch at 3840x1080: 144, 119.97, 99.96 and 59.97 Hz.
  const float c49[]={144.0f,119.97f,99.96f,59.97f};
- assert(nitrogen_window_smooth_refresh(c49,4,g)==119.97f);
+ assert(nitrogen_window_smooth_refresh(c49,4,g)==59.97f);     // one refresh per frame wins
+ const float c49_no60[]={144.0f,119.97f,99.96f};
+ assert(nitrogen_window_smooth_refresh(c49_no60,3,g)==119.97f);  // else a whole multiple
+ const float ntsc[]={60.0f,59.94f,120.0f}; assert(nitrogen_window_smooth_refresh(ntsc,3,g)==59.94f);
  const float only144[]={144.0f}; assert(nitrogen_window_smooth_refresh(only144,1,g)==0);
  const float plain[]={60.0f,75.0f}; assert(nitrogen_window_smooth_refresh(plain,2,g)==60.0f);
  const float fast[]={240.0f,165.0f,120.0f}; assert(nitrogen_window_smooth_refresh(fast,3,g)==240.0f);
+ const float near60[]={61.0f,59.0f}; assert(nitrogen_window_smooth_refresh(near60,2,g)==0);  // outside 0.5%
  const float none[]={100.0f,50.0f,72.0f}; assert(nitrogen_window_smooth_refresh(none,3,g)==0);
  assert(nitrogen_window_smooth_refresh(nullptr,0,g)==0);
  int even=-1;

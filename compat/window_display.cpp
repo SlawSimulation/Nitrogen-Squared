@@ -286,15 +286,21 @@ extern "C" void nitrogen_extras_service(void)
 // V2 frame pacing helpers.
 extern "C" float nitrogen_window_smooth_refresh(const float *rates,int count,double guest_hz)
 {
-    float best=0;
+    // Prefer a rate within 0.5% of the game's own (one refresh per frame):
+    // the framework then paces the game to the panel, so frames stay even.
+    // A higher multiple keeps the game's own clock, and the small rate
+    // difference repeats a frame now and then (every ~11 s at 119.97 Hz).
+    float single=0, multiple=0;
     if (!rates || guest_hz<=0) return 0;
     for (int i=0;i<count;++i) {
         const double r=rates[i];
         if (!(r>0)) continue;
         const long k=std::lround(r/guest_hz);
-        if (k>=1 && std::fabs(r/k-guest_hz)<=guest_hz*0.005 && rates[i]>best) best=rates[i];
+        if (k<1 || std::fabs(r/k-guest_hz)>guest_hz*0.005) continue;
+        if (k==1) { if (!single || std::fabs(r-guest_hz)<std::fabs(single-guest_hz)) single=rates[i]; }
+        else if (rates[i]>multiple) multiple=rates[i];
     }
-    return best;
+    return single ? single : multiple;
 }
 extern "C" double nitrogen_window_refreshes_per_frame(double host_hz,double guest_hz,int *even)
 {

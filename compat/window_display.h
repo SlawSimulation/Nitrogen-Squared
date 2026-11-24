@@ -56,8 +56,8 @@ void nitrogen_window_report_window(int width, int height);
 void nitrogen_window_report_vsync(int value, int env_override);
 void nitrogen_window_report(int *window_w, int *window_h, int *area_w, int *area_h,
                             int *vsync, int *env_override);
-/* V2 frame pacing. The highest listed refresh that is a whole multiple of
- * the game rate (within 0.5%), or 0 when none is. */
+/* V2 frame pacing. The listed refresh closest to the game rate (within
+ * 0.5%), else the highest whole multiple of it, else 0. */
 float nitrogen_window_smooth_refresh(const float *rates, int count, double guest_hz);
 /* Display refreshes per game frame; *even = 1 when each frame gets the same
  * whole number of refreshes (within 0.5%). */

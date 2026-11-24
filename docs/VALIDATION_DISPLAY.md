@@ -22,18 +22,36 @@ prefers not to enable.
 
 - Fullscreen refresh (`fullscreen_refresh`, 0 Desktop default, 1 Smoothest for
   60 fps), in the game's Video menu (second row, desktop only) and F1. Smooth
-  picks the highest refresh the display lists at the desktop resolution whose
-  rate divided by a whole number is within 0.5% of 59.94 (119.97 Hz on the
-  owner's 49-inch; 240 Hz would win where listed). It is passed to the
+  picks, at the desktop resolution, the listed refresh closest to 59.94 Hz
+  within 0.5% (59.970 Hz on the owner's 49-inch); only when there is none, the
+  highest rate whose division by a whole number is within 0.5% of 59.94
+  (such as 119.97 or 240 Hz). It is passed to the
   framework's existing exclusive-mode helper through its own
   `PSX_EXCLUSIVE_REFRESH_HZ` input, which only accepts a listed rate at the
   desktop resolution and otherwise keeps the desktop's; a developer value of
   that variable still wins. A change while already in Fullscreen re-selects
   the mode in place; SDL restores the desktop mode on leaving Fullscreen.
   Windowed and Borderless are unaffected. The framework re-probes the refresh
-  each second and re-applies its own cadence; at 120 Hz it keeps driver VSync
-  with the 59.94 Hz wall-clock cap, so each frame waits for every second
-  refresh (2.0015 refreshes per frame: one extra refresh about every 22 s).
+  each second and re-applies its own cadence (see the timing check below).
+- Timing correction (owner review, 2026-11-24). The first V2 build picked
+  119.97 Hz. Rates on the owner's 49-inch at 3840x1080, from the owner's V1
+  report (SDL, from Windows' DXGI rates, three decimals): 144.000, 119.970,
+  99.960, 59.970 Hz; Windows' own mode list there is 144, 120, 100, 60 and 59,
+  and both of its 60 Hz-class entries resolve to the single 59.970 Hz mode, so
+  there is no exact 59.94 Hz mode. The framework paces the game at exactly
+  1000/59.94 ms (16.68335 ms). At 119.970 Hz two refreshes take 16.67084 ms, so
+  each frame is 0.01251 ms late and one frame is held a third refresh every
+  666 frames, about every 11.1 s (not 22 s as first written). At 59.970 Hz the
+  framework's own match (within 2%) re-paces the game to the panel's reported
+  rate (16.67500 ms) with driver VSync owning the cadence in exclusive
+  Fullscreen, so each frame gets one refresh; the game runs 0.05% faster.
+  A 10-minute simulation of frames ready at the pacer's deadlines and shown
+  from the next refresh gives: 144 Hz, 40% of frames held 3 refreshes
+  (constant judder); 119.970 Hz, one long frame every 11.1 s; 59.970 Hz with
+  agreeing clocks, none; with the PC and graphics-card clocks 50 ppm apart,
+  one every ~300 s (a faster game is held back by the swap queue instead).
+  Smooth therefore now prefers the 60 Hz-class mode. The trade-off is a
+  60 Hz panel instead of 120 Hz: slightly later display of each frame.
 - F1 Settings reports refreshes per game frame and whether that is even, with
   advice when it is not, and which rate Smoothest uses.
 - F1 menu bar: F1 now reveals the bar when it is hidden for any reason,
@@ -47,7 +65,7 @@ prefers not to enable.
 
 | Check | Result |
 | --- | --- |
-| Smoothest picks 119.97 from the 49-inch's 144/119.97/99.96/59.97, 240 over 120, 60 from 60/75, none from 144-only or 100/72/50; refreshes per frame 2.40 uneven at 144, 2.00 even at 119.97 and 59.97 | pass (tests/test_display_options.py) |
+| Smoothest picks 59.97 from the 49-inch's 144/119.97/99.96/59.97, 119.97 when 59.97 is absent, 59.94 over 60, 240 over 120, 60 from 60/75, none from 144-only, 100/72/50 or 61/59; refreshes per frame 2.40 uneven at 144, 2.00 even at 119.97, 1.00 at 59.97 | pass (tests/test_display_options.py) |
 | Option default, range and persistence; the choice is set before the video mode is applied; developer override respected | pass |
 | F1 rule: without autohide F1 toggles as before; with autohide it reveals and re-hides without changing the preference; it restores a switched-off bar; an open menu always shows it | pass |
 | Video menu: seven rows at y 60-168, hint at 206, refresh row toggles both ways, all earlier rows, values and wraps | pass (tests/test_game_options.py) |

@@ -7,10 +7,14 @@ The game makes 59.94 frames a second; a 144 Hz screen must show each one for
 2 or 3 refreshes in turn, which can look like slight judder. A new Fullscreen
 refresh setting, in the game's Video menu (under video mode) and in F1
 Settings, fixes this in the Fullscreen window mode: Desktop (default, as
-before) keeps the desktop's rate; Smoothest for 60 fps picks the highest rate
-your screen offers that is an even multiple of 59.94 at the desktop
-resolution (120 Hz on the 49-inch), so every frame is shown for the same
-number of refreshes. Windowed and Borderless always use the desktop's rate.
+before) keeps the desktop's rate; Smoothest for 60 fps picks, at the desktop
+resolution, the rate your screen offers closest to the game's 59.94 Hz
+(59.97 Hz on the 49-inch), and the game is then paced to the screen so every
+frame is shown for exactly one refresh; the game runs 0.05% faster (about
+2 seconds an hour), as it already does on 60 Hz screens. Screens with no
+60 Hz-class mode get the highest even multiple instead (such as 120 Hz),
+which repeats a frame about every 11 seconds. Windowed and Borderless always
+use the desktop's rate.
 F1 Settings now says how many refreshes each game frame gets and whether
 that is even. F1 also now always shows the menu bar, and hides it again,
 even with autohide on, so it can be brought back in fullscreen. One more game
@@ -25,7 +29,7 @@ Focused checks (check N2-DISPLAY-V2):
    watch the tunnel's motion. F1 should report 2.40 refreshes per game frame
    (uneven).
 4. Switch Fullscreen refresh to Smoothest for 60 fps (F1 or the Video menu).
-   F1 should say it uses 119.97 Hz and report 2.00 (even). Play the same
+   F1 should say it uses 59.97 Hz and report 1.00 (even). Play the same
    part again and compare the smoothness by eye.
 5. Leave Fullscreen: the desktop returns to its usual 144 Hz.
 
@@ -1198,7 +1202,7 @@ Instructions for future maintainers and assistants:
         "In Fullscreen with Fullscreen refresh Desktop, play some of level 1; note F1's refreshes per game frame.",
         "Switch Fullscreen refresh to Smoothest for 60 fps, play the same part again and compare the motion by eye; leave Fullscreen and check the desktop is back at its usual rate."
       ],
-      "expected": "F1 always reveals and hides the bar. Desktop behaves as before (2.40, uneven at 144 Hz). Smoothest for 60 fps uses 119.97 Hz on the 49-inch, reports 2.00 (even) and looks at least as smooth. The desktop rate returns on leaving Fullscreen. Nothing else changes.",
+      "expected": "F1 always reveals and hides the bar. Desktop behaves as before (2.40, uneven at 144 Hz). Smoothest for 60 fps uses 59.97 Hz on the 49-inch, reports 1.00 (even) and looks at least as smooth. The desktop rate returns on leaving Fullscreen. Nothing else changes.",
       "context": "Dev at 0.2.2; one more game rebuild. Windowed and Borderless keep the desktop rate. Coverage and game timing unchanged."
     },
     {
