@@ -283,3 +283,40 @@ extern "C" void nitrogen_extras_service(void)
         nitrogen_extras_publish(0,none);
     }
 }
+// V2 frame pacing helpers.
+extern "C" float nitrogen_window_smooth_refresh(const float *rates,int count,double guest_hz)
+{
+    float best=0;
+    if (!rates || guest_hz<=0) return 0;
+    for (int i=0;i<count;++i) {
+        const double r=rates[i];
+        if (!(r>0)) continue;
+        const long k=std::lround(r/guest_hz);
+        if (k>=1 && std::fabs(r/k-guest_hz)<=guest_hz*0.005 && rates[i]>best) best=rates[i];
+    }
+    return best;
+}
+extern "C" double nitrogen_window_refreshes_per_frame(double host_hz,double guest_hz,int *even)
+{
+    if (even) *even=0;
+    if (!(host_hz>0) || !(guest_hz>0)) return 0;
+    const long k=std::lround(host_hz/guest_hz);
+    if (even) *even=k>=1 && std::fabs(host_hz/k-guest_hz)<=guest_hz*0.005;
+    return host_hz/guest_hz;
+}
+namespace {
+std::atomic<int> refresh_choice{0}, refresh_override{0};
+std::atomic<float> refresh_hz{0};
+}
+extern "C" void nitrogen_window_report_refresh(int choice,float hz,int override)
+{
+    refresh_hz.store(hz,std::memory_order_relaxed);
+    refresh_override.store(override,std::memory_order_relaxed);
+    refresh_choice.store(choice,std::memory_order_release);
+}
+extern "C" void nitrogen_window_refresh_report(int *choice,float *hz,int *override)
+{
+    *choice=refresh_choice.load(std::memory_order_acquire);
+    *hz=refresh_hz.load(std::memory_order_relaxed);
+    *override=refresh_override.load(std::memory_order_relaxed);
+}

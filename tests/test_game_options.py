@@ -172,8 +172,8 @@ int main(){
  c.gpr[4]=0x8011b160;c.gpr[5]=0x80160000;c.gpr[6]=0x80132000;c.gpr[7]=0;
  ww(0x8011b170,0x80);
  assert(audio(&c));assert(nitrogen_option_get(NITROGEN_MASTER_VOLUME)==95);
- // V1.2: six Video rows (mode, HUD scale, HUD position, aspect, vsync,
- // render resolution), navigated and changed in the game's own menu.
+ // V1.2/V2: seven Video rows (mode, fullscreen refresh, HUD scale, HUD
+ // position, aspect, vsync, render resolution), in the game's own menu.
  auto frame=[&](uint32_t buttons){
   c.gpr[4]=0x8011b160;c.gpr[5]=0x80132000;c.gpr[6]=0x80160000;
   ww(0x80090624,9);ww(0x80090628,9);ww(0x80090630,0);
@@ -182,21 +182,25 @@ int main(){
  auto line=[&](const char*s){for(auto&t:texts)if(t.first==s)return t.second;return -1;};
  ww(0x801f0004,0);
  frame(0);
- assert(line("video mode - windowed")==64 && line("HUD scale - AUTO")==84);
- assert(line("HUD position - edges")==104 && line("aspect - auto")==124);
- assert(line("vsync - on")==144 && line("render resolution - 100 percent")==164);
- assert(line("to change")==204);
- frame(0x40);frame(0x40);assert(rw(0x801f0004)==2);   // down to HUD position
+ assert(line("video mode - windowed")==60 && line("fullscreen refresh - desktop")==78);
+ assert(line("HUD scale - AUTO")==96 && line("HUD position - edges")==114);
+ assert(line("aspect - auto")==132 && line("vsync - on")==150);
+ assert(line("render resolution - 100 percent")==168 && line("to change")==206);
+ frame(0x40);assert(rw(0x801f0004)==1);               // down to fullscreen refresh
+ frame(0x20);assert(nitrogen_option_get(NITROGEN_FULLSCREEN_REFRESH)==NITROGEN_REFRESH_SMOOTH_60);
+ assert(line("fullscreen refresh - smooth 60")==78);
+ frame(0x80);assert(nitrogen_option_get(NITROGEN_FULLSCREEN_REFRESH)==NITROGEN_REFRESH_DESKTOP);
+ frame(0x40);frame(0x40);assert(rw(0x801f0004)==3);   // down to HUD position
  frame(0x20);assert(nitrogen_option_get(NITROGEN_HUD_LAYOUT)==NITROGEN_HUD_CENTRED_16_9);
- assert(line("HUD position - centred")==104);
+ assert(line("HUD position - centred")==114);
  frame(0x40);frame(0x20);frame(0x20);assert(nitrogen_option_get(NITROGEN_ASPECT)==NITROGEN_ASPECT_16_9);
- assert(line("aspect - 16x9")==124);
+ assert(line("aspect - 16x9")==132);
  frame(0x80);frame(0x80);frame(0x80);assert(nitrogen_option_get(NITROGEN_ASPECT)==NITROGEN_ASPECT_32_9); // wraps
- frame(0x40);frame(0x20);assert(nitrogen_option_get(NITROGEN_VSYNC)==0 && line("vsync - off")==144);
+ frame(0x40);frame(0x20);assert(nitrogen_option_get(NITROGEN_VSYNC)==0 && line("vsync - off")==150);
  frame(0x20);assert(nitrogen_option_get(NITROGEN_VSYNC)==1);
- frame(0x40);assert(rw(0x801f0004)==5);
+ frame(0x40);assert(rw(0x801f0004)==6);
  frame(0x20);assert(nitrogen_option_get(NITROGEN_RENDER_PERCENT)==105);   // slider row
- frame(0x40);assert(rw(0x801f0004)==0);frame(0x10);assert(rw(0x801f0004)==5); // both wraps
+ frame(0x40);assert(rw(0x801f0004)==0);frame(0x10);assert(rw(0x801f0004)==6); // both wraps
  // V1.2 game extras: F1 requests reach the game's own bytes only between
  // frames, only with the verified code resident and every byte in range.
  const uint32_t extra[]{0x8008ff7c,0x8011b4bf,0x8011b4be,0x8011b50d,0x8011b470};

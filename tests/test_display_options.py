@@ -293,9 +293,96 @@ int main(){
         self.assertNotIn('g_psx_ram', menu)   # the menu never touches guest memory
 
 
+@unittest.skipUnless(COMPILER, 'C++ compiler required for display fixtures')
+class MenuBarTests(unittest.TestCase):
+    def test_f1_reveals_and_hides_the_bar_with_and_without_autohide(self):
+        run_fixture(self, r"""
+#include "desktop_menu.h"
+#include <cassert>
+int main(){
+ // Without autohide F1 toggles the saved preference, as before.
+ NitrogenMenuBarState s{true,false,false};
+ assert(nitrogen_menu_bar_shown(s,false,false));
+ assert(nitrogen_menu_bar_f1(s,false,false)&&!s.visible&&!nitrogen_menu_bar_shown(s,false,false));
+ assert(nitrogen_menu_bar_f1(s,false,false)&&s.visible&&nitrogen_menu_bar_shown(s,false,false));
+ // Autohide, pointer away from the top (fullscreen hides the pointer):
+ // F1 reveals the bar without changing the preference, F1 again re-hides it.
+ s={true,true,false};
+ assert(!nitrogen_menu_bar_shown(s,false,false));
+ assert(!nitrogen_menu_bar_f1(s,false,false)&&s.peek&&nitrogen_menu_bar_shown(s,false,false));
+ assert(!nitrogen_menu_bar_f1(s,false,false)&&!s.peek&&s.visible&&!nitrogen_menu_bar_shown(s,false,false));
+ // Autohide with the bar switched off entirely: F1 still brings it back.
+ s={false,true,false};
+ assert(nitrogen_menu_bar_f1(s,false,false)&&s.visible&&s.peek&&nitrogen_menu_bar_shown(s,false,false));
+ // Autohide, already shown by hovering: F1 leaves it to autohide again.
+ s={true,true,false};
+ assert(!nitrogen_menu_bar_f1(s,false,true)&&!s.peek&&s.visible);
+ assert(nitrogen_menu_bar_shown(s,true,false));  // an open menu always shows it
+}
+""", [])
+
+    def test_menu_uses_the_tested_policy_and_clears_peek(self):
+        menu = (ROOT / 'compat' / 'desktop_menu.cpp').read_text(encoding='utf-8')
+        self.assertIn('nitrogen_menu_bar_f1(s,', menu)
+        self.assertIn('const bool bar = nitrogen_menu_bar_shown({m.visible, m.autohide, m.peek}', menu)
+        focus = menu[menu.index('SDL_EVENT_WINDOW_FOCUS_LOST'):][:200]
+        self.assertIn('m.peek = false;', focus)
+
+
+@unittest.skipUnless(COMPILER, 'C++ compiler required for display fixtures')
+class FramePacingTests(unittest.TestCase):
+    def test_smoothest_refresh_is_an_even_multiple_of_the_game_rate(self):
+        run_fixture(self, r"""
+#include "window_display.h"
+#include <cassert>
+#include <cmath>
+int main(){
+ const double g=60000.0/1001.0;   // 59.94
+ // The owner's 49-inch at 3840x1080: 144, 119.97, 99.96 and 59.97 Hz.
+ const float c49[]={144.0f,119.97f,99.96f,59.97f};
+ assert(nitrogen_window_smooth_refresh(c49,4,g)==119.97f);
+ const float only144[]={144.0f}; assert(nitrogen_window_smooth_refresh(only144,1,g)==0);
+ const float plain[]={60.0f,75.0f}; assert(nitrogen_window_smooth_refresh(plain,2,g)==60.0f);
+ const float fast[]={240.0f,165.0f,120.0f}; assert(nitrogen_window_smooth_refresh(fast,3,g)==240.0f);
+ const float none[]={100.0f,50.0f,72.0f}; assert(nitrogen_window_smooth_refresh(none,3,g)==0);
+ assert(nitrogen_window_smooth_refresh(nullptr,0,g)==0);
+ int even=-1;
+ assert(std::fabs(nitrogen_window_refreshes_per_frame(144,g,&even)-2.4024)<.001 && !even);
+ assert(std::fabs(nitrogen_window_refreshes_per_frame(119.97,g,&even)-2.0015)<.001 && even);
+ nitrogen_window_refreshes_per_frame(59.97,g,&even);assert(even);
+ nitrogen_window_refreshes_per_frame(75,g,&even);assert(!even);
+ assert(nitrogen_window_refreshes_per_frame(0,g,&even)==0 && !even);
+ nitrogen_window_report_refresh(1,119.97f,0);int ch,ov;float hz;nitrogen_window_refresh_report(&ch,&hz,&ov);
+ assert(ch==1&&hz==119.97f&&!ov);
+}
+""", ['window_display.cpp'])
+
+    def test_fullscreen_refresh_persists_and_reaches_the_framework_helper(self):
+        run_fixture(self, r"""
+#include "nitrogen_options.h"
+#include <cassert>
+int main(int,char**argv){
+ nitrogen_options_init(argv[1]);
+ assert(nitrogen_option_get(NITROGEN_FULLSCREEN_REFRESH)==NITROGEN_REFRESH_DESKTOP);  // default
+ assert(!nitrogen_option_set(NITROGEN_FULLSCREEN_REFRESH,2));
+ assert(nitrogen_option_set(NITROGEN_FULLSCREEN_REFRESH,NITROGEN_REFRESH_SMOOTH_60));
+}
+""", ['game_options.cpp'], args=('unused/',), env=dict(os.environ, NITROGEN_OPTIONS_FILE=os.devnull))
+        host = (ROOT / 'compat' / 'runtime_host.cpp').read_text(encoding='utf-8')
+        update = host[host.index('static void nitrogen_window_update()\n{'):]
+        update = update[:update.index('\n}\n')]
+        # The choice is set before the video mode is applied, so entering
+        # Fullscreen already uses it; a developer override is respected.
+        self.assertLess(update.index('nitrogen_exclusive_refresh_env(hz);'),
+                        update.index('psx_window_fullscreen_set(sdl_window'))
+        self.assertIn('getenv("PSX_EXCLUSIVE_REFRESH_HZ")', update)
+        self.assertIn('_putenv_s("PSX_EXCLUSIVE_REFRESH_HZ"', host)
+
+
 class SettingsParityTests(unittest.TestCase):
     """V1.2: the in-game Video menu and F1 Settings offer the same six options."""
     LABELS = {'NITROGEN_VIDEO_MODE': 'Window mode', 'NITROGEN_HUD_SCALE': 'HUD scale',
+              'NITROGEN_FULLSCREEN_REFRESH': 'Fullscreen refresh',
               'NITROGEN_RENDER_PERCENT': 'Render resolution', 'NITROGEN_HUD_LAYOUT': 'HUD position',
               'NITROGEN_ASPECT': 'Aspect', 'NITROGEN_VSYNC': 'VSync'}
 
@@ -311,7 +398,7 @@ class SettingsParityTests(unittest.TestCase):
         rows = entry[entry.index('constexpr int keys[]{'):]
         rows = rows[:rows.index('};')]
         self.assertEqual([k.strip() for k in rows.split('{', 1)[1].split(',')],
-                         ['NITROGEN_VIDEO_MODE', 'NITROGEN_HUD_SCALE', 'NITROGEN_HUD_LAYOUT',
+                         ['NITROGEN_VIDEO_MODE', 'NITROGEN_FULLSCREEN_REFRESH', 'NITROGEN_HUD_SCALE', 'NITROGEN_HUD_LAYOUT',
                           'NITROGEN_ASPECT', 'NITROGEN_VSYNC', 'NITROGEN_RENDER_PERCENT'])
         self.assertEqual(set(self.LABELS), {k.strip() for k in rows.split('{', 1)[1].split(',')})
 

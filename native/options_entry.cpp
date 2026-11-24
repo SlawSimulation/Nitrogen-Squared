@@ -257,11 +257,11 @@ int presentation(CPUState *c)
     }
     c->write_half(context+0x3c2,9);
     const uint32_t edge=buttons&~c->read_word(context+0x14);
-    const int first=nitrogen_options_desktop()?0:1;
+    const int first=nitrogen_options_desktop()?0:2;   // video mode and refresh are desktop-only
     // Video rows, top to bottom. Render resolution stays last, with its slider.
-    constexpr int keys[]{NITROGEN_VIDEO_MODE,NITROGEN_HUD_SCALE,NITROGEN_HUD_LAYOUT,
+    constexpr int keys[]{NITROGEN_VIDEO_MODE,NITROGEN_FULLSCREEN_REFRESH,NITROGEN_HUD_SCALE,NITROGEN_HUD_LAYOUT,
                          NITROGEN_ASPECT,NITROGEN_VSYNC,NITROGEN_RENDER_PERCENT};
-    constexpr int last=5, top=64, spacing=20;
+    constexpr int last=6, top=60, spacing=18;
     int row=std::clamp(static_cast<int>(c->read_word(arena+4)),first,last);
     bool changed=false;
     if (!opacity) {
@@ -279,7 +279,8 @@ int presentation(CPUState *c)
                 changed=nitrogen_option_set(key,steps[(index+direction+5)%5])!=0;
                 break;
             }
-            case NITROGEN_HUD_LAYOUT: case NITROGEN_VSYNC: changed=nitrogen_option_set(key,!value)!=0; break;
+            case NITROGEN_HUD_LAYOUT: case NITROGEN_VSYNC: case NITROGEN_FULLSCREEN_REFRESH:
+                changed=nitrogen_option_set(key,!value)!=0; break;
             case NITROGEN_ASPECT: changed=nitrogen_option_set(key,(value+direction+5)%5)!=0; break;
             default: changed=nitrogen_option_set(key,std::clamp(value+direction*5,25,200))!=0; break;
             }
@@ -297,24 +298,27 @@ int presentation(CPUState *c)
         constexpr const char *modes[]{"windowed","borderless fullscreen","fullscreen"};
         std::snprintf(line,sizeof(line),"video mode - %s",modes[nitrogen_option_get(NITROGEN_VIDEO_MODE)]);
         packet=text(c,packet,view,line,top,0,row==0,opacity);
+        std::snprintf(line,sizeof(line),"fullscreen refresh - %s",
+                      nitrogen_option_get(NITROGEN_FULLSCREEN_REFRESH)==NITROGEN_REFRESH_SMOOTH_60?"smooth 60":"desktop");
+        packet=text(c,packet,view,line,top+spacing,0,row==1,opacity);
     }
     const int scale=nitrogen_option_get(NITROGEN_HUD_SCALE);
     if(scale) std::snprintf(line,sizeof(line),"HUD scale - %dX",scale);
     else std::snprintf(line,sizeof(line),"HUD scale - AUTO");
-    packet=text(c,packet,view,line,top+spacing,0,row==1,opacity);
+    packet=text(c,packet,view,line,top+2*spacing,0,row==2,opacity);
     std::snprintf(line,sizeof(line),"HUD position - %s",
                   nitrogen_option_get(NITROGEN_HUD_LAYOUT)==NITROGEN_HUD_CENTRED_16_9?"centred":"edges");
-    packet=text(c,packet,view,line,top+2*spacing,0,row==2,opacity);
+    packet=text(c,packet,view,line,top+3*spacing,0,row==3,opacity);
     // Letters and digits only: the game font's punctuation set is not assumed.
     constexpr const char *aspects[]{"auto","4x3 original","16x9","21x9","32x9"};
     std::snprintf(line,sizeof(line),"aspect - %s",aspects[std::clamp(nitrogen_option_get(NITROGEN_ASPECT),0,4)]);
-    packet=text(c,packet,view,line,top+3*spacing,0,row==3,opacity);
-    std::snprintf(line,sizeof(line),"vsync - %s",nitrogen_option_get(NITROGEN_VSYNC)?"on":"off");
     packet=text(c,packet,view,line,top+4*spacing,0,row==4,opacity);
-    std::snprintf(line,sizeof(line),"render resolution - %d percent",nitrogen_option_get(NITROGEN_RENDER_PERCENT));
+    std::snprintf(line,sizeof(line),"vsync - %s",nitrogen_option_get(NITROGEN_VSYNC)?"on":"off");
     packet=text(c,packet,view,line,top+5*spacing,0,row==5,opacity);
-    packet=slider(c,packet,view,top+5*spacing+18,nitrogen_option_get(NITROGEN_RENDER_PERCENT),200,88);
-    packet=arrow_hint(c,packet,view,204);
+    std::snprintf(line,sizeof(line),"render resolution - %d percent",nitrogen_option_get(NITROGEN_RENDER_PERCENT));
+    packet=text(c,packet,view,line,top+6*spacing,0,row==6,opacity);
+    packet=slider(c,packet,view,top+6*spacing+18,nitrogen_option_get(NITROGEN_RENDER_PERCENT),200,88);
+    packet=arrow_hint(c,packet,view,206);
     // The original menu ray field stays guest-timed behind our new controls.
     packet=call(c,0x80061ec0,packet,view+0x750,8,context,9);
     std::copy(registers.begin(),registers.end(),c->gpr); c->gpr[2]=packet;

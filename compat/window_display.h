@@ -56,6 +56,16 @@ void nitrogen_window_report_window(int width, int height);
 void nitrogen_window_report_vsync(int value, int env_override);
 void nitrogen_window_report(int *window_w, int *window_h, int *area_w, int *area_h,
                             int *vsync, int *env_override);
+/* V2 frame pacing. The highest listed refresh that is a whole multiple of
+ * the game rate (within 0.5%), or 0 when none is. */
+float nitrogen_window_smooth_refresh(const float *rates, int count, double guest_hz);
+/* Display refreshes per game frame; *even = 1 when each frame gets the same
+ * whole number of refreshes (within 0.5%). */
+double nitrogen_window_refreshes_per_frame(double host_hz, double guest_hz, int *even);
+/* Reporting only: the Fullscreen refresh choice and the rate it selected
+ * (0 = the desktop's rate; override = a developer PSX_EXCLUSIVE_REFRESH_HZ). */
+void nitrogen_window_report_refresh(int choice, float hz, int override);
+void nitrogen_window_refresh_report(int *choice, float *hz, int *override);
 /* V1.2 game extras: one byte each, owned by the game's own Extras menu and
  * saved only by the game's own memory-card set-up. The desktop menu only
  * queues requests; the identity-guarded game side applies them between guest

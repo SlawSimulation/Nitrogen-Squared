@@ -2,6 +2,33 @@
 
 ## Current acceptance and update checks
 
+**Display V2 — smoother motion and the F1 bar (dev, still 0.2.2).**
+The game makes 59.94 frames a second; a 144 Hz screen must show each one for
+2 or 3 refreshes in turn, which can look like slight judder. A new Fullscreen
+refresh setting, in the game's Video menu (under video mode) and in F1
+Settings, fixes this in the Fullscreen window mode: Desktop (default, as
+before) keeps the desktop's rate; Smoothest for 60 fps picks the highest rate
+your screen offers that is an even multiple of 59.94 at the desktop
+resolution (120 Hz on the 49-inch), so every frame is shown for the same
+number of refreshes. Windowed and Borderless always use the desktop's rate.
+F1 Settings now says how many refreshes each game frame gets and whether
+that is even. F1 also now always shows the menu bar, and hides it again,
+even with autohide on, so it can be brought back in fullscreen. One more game
+rebuild; saves and settings are kept.
+
+Focused checks (check N2-DISPLAY-V2):
+1. In your test copy, install the V2 candidate and let the launcher rebuild
+   the game once.
+2. Turn on Autohide menu bar in F1, switch to Fullscreen, and press F1: the
+   bar appears; press F1 again: it hides.
+3. In Fullscreen with Fullscreen refresh Desktop, play some of level 1 and
+   watch the tunnel's motion. F1 should report 2.40 refreshes per game frame
+   (uneven).
+4. Switch Fullscreen refresh to Smoothest for 60 fps (F1 or the Video menu).
+   F1 should say it uses 119.97 Hz and report 2.00 (even). Play the same
+   part again and compare the smoothness by eye.
+5. Leave Fullscreen: the desktop returns to its usual 144 Hz.
+
 **Display V1.2 — one set of display settings, and the game's Extras in F1
 (feature branch, still 0.2.2).** The game's own Video menu now has every
 display setting F1 has: video mode, HUD scale, HUD position, aspect, vsync and
@@ -1156,9 +1183,24 @@ Instructions for future maintainers and assistants:
     "runtime": "Windows / Linux x64 \u00b7 USA disc",
     "cart": "",
     "createdAt": "2026-11-10",
-    "description": "Repairs future source mtimes behind the CMake loop, uses 80% desktop thread budgets and displays build stage/detail/workers/elapsed. Retains disc-derived game icon and interrupted-setup repairs. CI and owner verification pending. Corrects pre-1980 bundled-file ZIP metadata rejection; d83eedd source/UI and runtime checks passed before packaging failed. Adds multi-BIN (per-track) CUE import; player and CI verification pending. Adds V0 display measurement tooling (no runtime change). V1 adds Aspect and VSync settings and reports the actual 3D size (validated on the owner's PC). V1.1 adds a HUD position setting (validated on the owner's PC). V1.2 gives the game's Video menu and F1 Settings the same display options and adds the game's Extras to F1 (validated on the owner's PC)."
+    "description": "Repairs future source mtimes behind the CMake loop, uses 80% desktop thread budgets and displays build stage/detail/workers/elapsed. Retains disc-derived game icon and interrupted-setup repairs. CI and owner verification pending. Corrects pre-1980 bundled-file ZIP metadata rejection; d83eedd source/UI and runtime checks passed before packaging failed. Adds multi-BIN (per-track) CUE import; player and CI verification pending. Adds V0 display measurement tooling (no runtime change). V1 adds Aspect and VSync settings and reports the actual 3D size (validated on the owner's PC). V1.1 adds a HUD position setting (validated on the owner's PC). V1.2 gives the game's Video menu and F1 Settings the same display options and adds the game's Extras to F1 (validated on the owner's PC). V2 adds a Fullscreen refresh setting for even frame pacing and lets F1 reveal an autohidden menu bar; owner verification pending."
   },
   "checks": [
+    {
+      "id": "N2-DISPLAY-V2",
+      "title": "Check Fullscreen refresh smoothness and the F1 bar",
+      "area": "Display options (V2)",
+      "required": true,
+      "priority": "high",
+      "steps": [
+        "In your test copy, install the V2 candidate and let the launcher rebuild the game once. Preserve .local and your saves.",
+        "With Autohide menu bar on, switch to Fullscreen and press F1 twice: the bar appears, then hides.",
+        "In Fullscreen with Fullscreen refresh Desktop, play some of level 1; note F1's refreshes per game frame.",
+        "Switch Fullscreen refresh to Smoothest for 60 fps, play the same part again and compare the motion by eye; leave Fullscreen and check the desktop is back at its usual rate."
+      ],
+      "expected": "F1 always reveals and hides the bar. Desktop behaves as before (2.40, uneven at 144 Hz). Smoothest for 60 fps uses 119.97 Hz on the 49-inch, reports 2.00 (even) and looks at least as smooth. The desktop rate returns on leaving Fullscreen. Nothing else changes.",
+      "context": "Dev at 0.2.2; one more game rebuild. Windowed and Borderless keep the desktop rate. Coverage and game timing unchanged."
+    },
     {
       "id": "N2-DISPLAY-V12",
       "title": "Check matching display settings and Game extras in F1",

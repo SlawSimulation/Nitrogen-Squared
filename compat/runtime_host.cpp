@@ -29,6 +29,32 @@ static const char *nitrogen_base_window_title(SDL_Window *window)
 #ifdef NITROGEN_WINDOW_DISPLAY
 extern "C" int nitrogen_menu_reserved_height(void);
 extern "C" void nitrogen_gpu_enable_ui(void);
+// V2: the highest even-cadence Fullscreen refresh at the desktop resolution.
+static float nitrogen_smooth_exclusive_hz(SDL_Window *window)
+{
+    const SDL_DisplayID display = SDL_GetDisplayForWindow(window);
+    const SDL_DisplayMode *desktop = display ? SDL_GetDesktopDisplayMode(display) : nullptr;
+    if (!desktop) return 0;
+    int count = 0;
+    SDL_DisplayMode **modes = SDL_GetFullscreenDisplayModes(display, &count);
+    std::vector<float> rates;
+    for (int i = 0; modes && i < count; ++i)
+        if (modes[i]->w == desktop->w && modes[i]->h == desktop->h) rates.push_back(modes[i]->refresh_rate);
+    SDL_free(modes);
+    return nitrogen_window_smooth_refresh(rates.data(), (int)rates.size(), 60000.0 / 1001.0);
+}
+static void nitrogen_exclusive_refresh_env(float hz)
+{
+    // Read by the framework's own Fullscreen helper; it only accepts a rate
+    // the display lists at the desktop resolution, otherwise the desktop's.
+    char text[32] = "";
+    if (hz > 0) std::snprintf(text, sizeof(text), "%.3f", hz);
+#ifdef _WIN32
+    _putenv_s("PSX_EXCLUSIVE_REFRESH_HZ", text);
+#else
+    if (*text) setenv("PSX_EXCLUSIVE_REFRESH_HZ", text, 1); else unsetenv("PSX_EXCLUSIVE_REFRESH_HZ");
+#endif
+}
 static void nitrogen_window_update()
 {
     if(nitrogen_window_take_close()) {
@@ -47,6 +73,29 @@ static void nitrogen_window_update()
     if (applied_volume != volume) { host_volume_set(volume); applied_volume = volume; }
     static int applied_mode = -1;
     const int mode = nitrogen_option_get(NITROGEN_VIDEO_MODE);
+    // V2 Fullscreen refresh. A developer PSX_EXCLUSIVE_REFRESH_HZ still wins.
+    static const bool refresh_override = [] { const char *e = std::getenv("PSX_EXCLUSIVE_REFRESH_HZ"); return e && *e; }();
+    static int applied_refresh = -1;
+    const int refresh_choice = nitrogen_option_get(NITROGEN_FULLSCREEN_REFRESH);
+    if (refresh_override) {
+        if (applied_refresh != refresh_choice) nitrogen_window_report_refresh(refresh_choice, 0, 1);
+        applied_refresh = refresh_choice;
+    } else if (refresh_choice != applied_refresh || (mode == NITROGEN_FULLSCREEN && mode != applied_mode)) {
+        const float hz = refresh_choice == NITROGEN_REFRESH_SMOOTH_60 ? nitrogen_smooth_exclusive_hz(sdl_window) : 0.0f;
+        nitrogen_exclusive_refresh_env(hz);
+        nitrogen_window_report_refresh(refresh_choice, hz, 0);
+        // Already in Fullscreen: change its rate in place, as the helper would.
+        if (applied_refresh >= 0 && refresh_choice != applied_refresh && s_window_fullscreen.mode == 2) {
+            const SDL_DisplayID display = SDL_GetDisplayForWindow(sdl_window);
+            const SDL_DisplayMode *desktop = display ? SDL_GetDesktopDisplayMode(display) : nullptr;
+            SDL_DisplayMode exclusive{};
+            if (desktop && SDL_GetClosestFullscreenDisplayMode(display, desktop->w, desktop->h,
+                    hz > 0 ? hz : desktop->refresh_rate, true, &exclusive) &&
+                exclusive.w == desktop->w && exclusive.h == desktop->h)
+                (void)SDL_SetWindowFullscreenMode(sdl_window, &exclusive);
+        }
+        applied_refresh = refresh_choice;
+    }
     if (applied_mode != mode) {
         if (psx_window_fullscreen_set(sdl_window, &s_window_fullscreen, mode) == 0) {
             g_fullscreen = mode;

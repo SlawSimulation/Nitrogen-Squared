@@ -32,6 +32,7 @@ struct DesktopMenu {
     SDL_Window *window = nullptr;
     std::atomic<bool> open{false};
     bool visible = true, autohide = false, settings = false, about = false;
+    bool peek = false;   // F1 revealed an autohidden bar
     bool performance = false, audio = false, reset = false;
     bool escape = false, close_requested = false;
     float bar_height = 24.0f, performance_height = 0;
@@ -70,6 +71,16 @@ void video_settings()
         int mode = nitrogen_option_get(NITROGEN_VIDEO_MODE);
         if (ImGui::Combo("Window mode", &mode, modes, IM_ARRAYSIZE(modes)))
             nitrogen_option_set(NITROGEN_VIDEO_MODE, mode);
+        static const char *refreshes[] = {"Desktop", "Smoothest for 60 fps"};
+        int refresh = nitrogen_option_get(NITROGEN_FULLSCREEN_REFRESH);
+        if (ImGui::Combo("Fullscreen refresh", &refresh, refreshes, IM_ARRAYSIZE(refreshes)))
+            nitrogen_option_set(NITROGEN_FULLSCREEN_REFRESH, refresh);
+        int choice = 0, override = 0; float chosen = 0;
+        nitrogen_window_refresh_report(&choice, &chosen, &override);
+        if (override) ImGui::TextDisabled("Set by PSX_EXCLUSIVE_REFRESH_HZ.");
+        else if (choice == NITROGEN_REFRESH_SMOOTH_60)
+            chosen > 0 ? ImGui::TextDisabled("Uses %.2f Hz in Fullscreen mode.", chosen)
+                       : ImGui::TextDisabled("No even rate at this resolution; uses the desktop rate.");
     }
     static const int steps[] = {0, 2, 3, 4, 6};
     static const char *scales[] = {"Auto", "2x", "3x", "4x", "6x"};
@@ -166,9 +177,17 @@ void display_settings(DesktopMenu &m)
                 env ? " (set by PSX_VSYNC)" : (vsync && !effective ? " (turned off by the game's configuration)" : ""));
     if (refresh > 0) {
         ImGui::Text("Display refresh: %.2f Hz; the game runs at 59.94 Hz.", refresh);
-        if (effective && !psx_present_vsync_owns_cadence())
-            ImGui::TextWrapped("This refresh rate is not a match for the game, so the game keeps its own pace and "
-                               "frames are shown for unequal numbers of refreshes. A 60 Hz or 120 Hz mode is even.");
+        int even = 0;
+        const double per_frame = nitrogen_window_refreshes_per_frame(refresh, 60000.0 / 1001.0, &even);
+        if (even)
+            ImGui::Text("Refreshes per game frame: %.2f (even: smooth motion)", per_frame);
+        else {
+            ImGui::Text("Refreshes per game frame: %.2f (uneven)", per_frame);
+            ImGui::TextWrapped("Each frame is shown for %d or %d refreshes, which can look like slight judder. "
+                               "For even motion use Fullscreen with \"Smoothest for 60 fps\", or a variable "
+                               "refresh display (G-SYNC / FreeSync).",
+                               (int)std::floor(per_frame), (int)std::floor(per_frame) + 1);
+        }
     } else {
         ImGui::TextUnformatted("Display refresh: unavailable");
     }
@@ -264,9 +283,13 @@ int event(void *context, const void *input)
     ImGui_ImplSDL3_ProcessEvent(&ev);
     if (ev.type == SDL_EVENT_KEY_DOWN && !ev.key.repeat) {
         if (ev.key.key == SDLK_F1) {
-            m.visible = !m.visible;
-            if (!m.visible) m.close_requested = true;
-            save_preferences(m);
+            NitrogenMenuBarState s{m.visible, m.autohide, m.peek};
+            float x = 0, y = 0;
+            SDL_GetMouseState(&x, &y);
+            const bool changed = nitrogen_menu_bar_f1(s, m.open.load(), y >= 0 && y <= m.bar_height);
+            m.visible = s.visible; m.peek = s.peek;
+            if (!nitrogen_menu_bar_shown(s, false, false)) m.close_requested = true;
+            if (changed) save_preferences(m);
             return 1;
         }
         if (ev.key.key == SDLK_F11) { fullscreen(m); return 1; }
@@ -274,6 +297,7 @@ int event(void *context, const void *input)
     }
     if (ev.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
         m.close_requested = true;
+        m.peek = false;
 #ifdef NITROGEN_WINDOW_DISPLAY
         (void)nitrogen_window_close_hold(0,0);
 #endif
@@ -351,7 +375,7 @@ void draw(void *context, int, int)
     const ImVec2 mouse = ImGui::GetIO().MousePos;
     const bool over_bar = mouse.x >= 0 && mouse.x < ImGui::GetIO().DisplaySize.x &&
                           mouse.y >= 0 && mouse.y <= m.bar_height;
-    const bool bar = m.visible && (!m.autohide || m.open || over_bar);
+    const bool bar = nitrogen_menu_bar_shown({m.visible, m.autohide, m.peek}, m.open, over_bar);
     if (bar && ImGui::BeginMainMenuBar()) {
         m.bar_height = ImGui::GetWindowHeight();
         if (!close && ImGui::BeginMenu("System")) {
@@ -359,7 +383,7 @@ void draw(void *context, int, int)
             if (ImGui::MenuItem("Settings")) m.settings = true;
             ImGui::Separator();
             changed |= ImGui::MenuItem("Show Menu Bar", "F1", &m.visible);
-            changed |= ImGui::MenuItem("Autohide Menu Bar", nullptr, &m.autohide);
+            if (ImGui::MenuItem("Autohide Menu Bar", nullptr, &m.autohide)) { changed = true; m.peek = false; }
             PsxHostVideoSettings v{};
             m.host->video_get(&v);
             if (ImGui::MenuItem("Fullscreen", "F11", v.fullscreen != 0)) fullscreen(m);
@@ -396,8 +420,8 @@ void draw(void *context, int, int)
 #endif
             ImGui::SeparatorText("Menu");
             changed |= ImGui::Checkbox("Show menu bar (F1)", &m.visible);
-            changed |= ImGui::Checkbox("Autohide menu bar", &m.autohide);
-            ImGui::TextUnformatted("Escape closes menus. F1 restores a hidden bar.");
+            if (ImGui::Checkbox("Autohide menu bar", &m.autohide)) { changed = true; m.peek = false; }
+            ImGui::TextUnformatted("Escape closes menus. F1 shows or hides the bar, also with autohide.");
         }
         ImGui::End();
     }

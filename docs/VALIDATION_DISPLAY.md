@@ -1,5 +1,64 @@
 # Display validation
 
+## V2 frame pacing and F1 bar (dev, 0.2.2, unreleased) — 2026-11-24
+
+VERSION stays 0.2.2; the compiled-game inputs change (one rebuild,
+`2b8b9bfe…`). Native selected code, coverage (38.4156% / 61.5844%), guest
+clocks and the framework checkout are unchanged.
+
+### Why motion judders at 144 Hz
+
+The game produces 59.94 frames per second. On a 144 Hz panel that is 2.40
+refreshes per frame, so frames are shown for 2 or 3 refreshes in turn. In
+windowed and borderless modes the pinned framework deliberately turns driver
+VSync off on NVIDIA with the render thread (Windows composes the window) and
+paces with its wall clock; in exclusive Fullscreen it keeps a swap interval of
+1 and the same wall-clock cap. Neither can divide 144 evenly. Even pacing
+needs a refresh that is a whole multiple of 59.94 (60 or 120 Hz), or a
+variable-refresh display (G-SYNC Compatible / FreeSync), which the owner
+prefers not to enable.
+
+### Changes
+
+- Fullscreen refresh (`fullscreen_refresh`, 0 Desktop default, 1 Smoothest for
+  60 fps), in the game's Video menu (second row, desktop only) and F1. Smooth
+  picks the highest refresh the display lists at the desktop resolution whose
+  rate divided by a whole number is within 0.5% of 59.94 (119.97 Hz on the
+  owner's 49-inch; 240 Hz would win where listed). It is passed to the
+  framework's existing exclusive-mode helper through its own
+  `PSX_EXCLUSIVE_REFRESH_HZ` input, which only accepts a listed rate at the
+  desktop resolution and otherwise keeps the desktop's; a developer value of
+  that variable still wins. A change while already in Fullscreen re-selects
+  the mode in place; SDL restores the desktop mode on leaving Fullscreen.
+  Windowed and Borderless are unaffected. The framework re-probes the refresh
+  each second and re-applies its own cadence; at 120 Hz it keeps driver VSync
+  with the 59.94 Hz wall-clock cap, so each frame waits for every second
+  refresh (2.0015 refreshes per frame: one extra refresh about every 22 s).
+- F1 Settings reports refreshes per game frame and whether that is even, with
+  advice when it is not, and which rate Smoothest uses.
+- F1 menu bar: F1 now reveals the bar when it is hidden for any reason,
+  including autohide (the pointer is hidden in fullscreen, so hovering the top
+  edge was impractical), and hides it again on the next press. With autohide
+  the preference is kept; focus loss returns to autohide.
+- The game Video menu has seven rows (spacing 18 from y 60) to fit the new row
+  above the existing footer.
+
+### Local validation (this host)
+
+| Check | Result |
+| --- | --- |
+| Smoothest picks 119.97 from the 49-inch's 144/119.97/99.96/59.97, 240 over 120, 60 from 60/75, none from 144-only or 100/72/50; refreshes per frame 2.40 uneven at 144, 2.00 even at 119.97 and 59.97 | pass (tests/test_display_options.py) |
+| Option default, range and persistence; the choice is set before the video mode is applied; developer override respected | pass |
+| F1 rule: without autohide F1 toggles as before; with autohide it reveals and re-hides without changing the preference; it restores a switched-off bar; an open menu always shows it | pass |
+| Video menu: seven rows at y 60-168, hint at 206, refresh row toggles both ways, all earlier rows, values and wraps | pass (tests/test_game_options.py) |
+| Real normal build with V2 (two jobs) | pass (compiled-game inputs `2b8b9bfe…`) |
+| Real game, software renderer: Video menu reached through the game's own options wheel shows all seven rows inside the footer | pass |
+| Exclusive refresh switching, smoothness, F1 report on a real 144 Hz panel | pending, owner's PC (this host has a 32 Hz remote display) |
+
+Found while testing, not changed: with the software renderer the options
+file is not loaded, because loading follows the window update's OpenGL-only
+early return; OpenGL players are unaffected.
+
 ## V1.2 menu parity and game extras in F1 (feature branch, 0.2.2, unreleased) — 2026-11-24
 
 Requested by the owner after V1.1: the game's own Video menu and F1 Settings
