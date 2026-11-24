@@ -7,6 +7,7 @@ import struct
 import sys
 import tempfile
 import unittest
+import unittest.mock
 import zlib
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -283,6 +284,59 @@ class PlanTests(unittest.TestCase):
         golden = report.plan_runs(small, "golden")
         self.assertEqual([(r["width"], r["height"]) for r in golden], [(1280, 720)] * 2)
         self.assertEqual(report.pick_display([OWNER_STYLE_DISPLAY, dict(small, index=1)], None)["index"], 0)
+
+    def test_v1_preset_uses_the_player_settings_and_keeps_v0_goldens(self):
+        runs = {r["id"]: r for r in report.plan_runs(OWNER_STYLE_DISPLAY, "v1")}
+        golden = runs["win-1920x1080-100pct-vsync1-golden-a"]
+        self.assertEqual(golden["captures"], report.DEFAULT_CAPTURES)
+        self.assertNotIn("aspect_option", golden)              # Auto, exactly as V0
+        self.assertEqual(golden.get("vsync_via", "env"), "env")
+        for option, label in report.ASPECTS:
+            run = runs[f"v1-aspect-{label}"]
+            self.assertEqual((run["aspect_option"], run["vsync_via"], run["video_mode"]), (option, "option", 1))
+        self.assertEqual((runs["v1-vsync-off"]["vsync"], runs["v1-vsync-off"]["vsync_via"]), (0, "option"))
+        clamp = runs["v1-clamp-7680x2160-200pct"]
+        self.assertEqual((clamp["width"], clamp["render_percent"], clamp["kind"]), (7680, 200, "windowed-oversized"))
+
+    def test_options_file_and_vsync_override_per_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            local = Path(tmp) / ".local"
+            out = local / "measurements" / "x"
+            out.mkdir(parents=True)
+            seen = {}
+
+            def fake_run(command, **kwargs):     # record the game's environment; start nothing
+                seen["env"] = kwargs.get("env")
+                raise measure.subprocess.TimeoutExpired(command, 0)
+            info = dict(work=local, disc_bin=Path(tmp) / "disc.bin", game=Path(tmp) / "game.toml")
+            original = measure.subprocess.run
+            measure.subprocess.run = fake_run
+            try:
+                with unittest.mock.patch.dict(measure.os.environ, PSX_VSYNC="1"):
+                    # A V1 run uses the player's setting: the developer override is removed.
+                    for run, expect in ((dict(id="a", aspect_option=3, vsync=0, vsync_via="option"), None),
+                                        (dict(id="b", vsync=0), "0")):
+                        measure.run_once(Path(tmp) / "missing.exe", info, dict(run, kind="test", route="default", mode="none"),
+                                         out, None, 1, False, False)
+                        self.assertEqual(seen["env"].get("PSX_VSYNC"), expect)
+                        options = (out / "runs" / run["id"] / "nitrogen-options.ini").read_text()
+                        self.assertIn(f"aspect {run.get('aspect_option', 0)}\n", options)
+                        self.assertIn(f"vsync {run['vsync']}\n", options)
+            finally:
+                measure.subprocess.run = original
+
+    def test_baseline_comparison_is_capture_exact(self):
+        name = report.GOLDEN_RUN
+        old = dict(created="v0", build=dict(build_identity=dict(inputs_sha256="4dc2")),
+                   runs=[dict(id=name, status="completed", captures={"guest-0.png": "a", "present-0.png": "b"})])
+        same = [dict(id=name, status="completed", captures={"guest-0.png": "a", "present-0.png": "b"})]
+        moved = [dict(id=name, status="completed", captures={"guest-0.png": "a", "present-0.png": "c"})]
+        self.assertTrue(report.compare_baseline(old, same)["identical_to_baseline"])
+        result = report.compare_baseline(old, moved)
+        self.assertFalse(result["identical_to_baseline"])
+        self.assertEqual(result["differing"], ["present-0.png"])
+        self.assertEqual(result["baseline_build"], "4dc2")
+        self.assertIsNone(report.compare_baseline(old, [])["identical_to_baseline"])
 
 
 class LinkTests(unittest.TestCase):

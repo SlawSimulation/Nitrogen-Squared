@@ -34,6 +34,15 @@ test('tasks survive page changes and preferences commit through the bridge',asyn
   for(let i=0;i<26;i++)await page.keyboard.press('ArrowRight');
   await expect.poll(()=>page.evaluate(()=>window.__N2_MOCK__.state.options.master_volume)).toBe(26);
 });
+test('aspect and vsync start at Auto and On and commit through the bridge',async({page})=>{
+  await page.goto('/');await page.getByRole('button',{name:'Settings',exact:true}).click();
+  const aspect=page.getByRole('combobox',{name:'Aspect',exact:true}),vsync=page.getByRole('combobox',{name:'VSync',exact:true});
+  await expect(aspect).toHaveValue('0');await expect(vsync).toHaveValue('1');
+  await aspect.selectOption('3');
+  await expect.poll(()=>page.evaluate(()=>window.__N2_MOCK__.state.options.aspect)).toBe(3);
+  await vsync.selectOption('0');
+  await expect.poll(()=>page.evaluate(()=>window.__N2_MOCK__.state.options.vsync)).toBe(0);
+});
 test('remote release text is literal and reduced-motion navigation remains scrollable',async({page})=>{
   await page.emulateMedia({reducedMotion:'reduce'});await page.goto('/');
   await page.evaluate(()=>{const {state,emit}=window.__N2_MOCK__;state.releases[0].body='<img src=x onerror="window.bad=true">';state.revision++;emit('state',structuredClone(state));});

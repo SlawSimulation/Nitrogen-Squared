@@ -43,6 +43,11 @@ extern "C" bool __real_SDL_RenderPresent(SDL_Renderer *);
 extern "C" void nitrogen_window_world_size(int *, int *);
 extern "C" int nitrogen_window_ui_step(int, int);
 extern "C" int nitrogen_menu_reserved_height(void);
+// Display V1 reporting. Weak: a build without V1 still links, and records none.
+struct NitrogenWorldStatusV1 { int percent, requested_w, requested_h, actual_w, actual_h, reason, max_texture; };
+extern "C" void nitrogen_window_world_status(NitrogenWorldStatusV1 *) __attribute__((weak));
+extern "C" void nitrogen_window_report(int *, int *, int *, int *, int *, int *) __attribute__((weak));
+extern "C" int nitrogen_option_get(int) __attribute__((weak));
 
 namespace {
 // ---- time -------------------------------------------------------------
@@ -403,6 +408,23 @@ void scale_sample() {
         s.hr_scale, s.windowed, s.window_tiles, s.window_mib, s.alloc_scale);
     info("scale_sample", b);
     window_state("window_sample");
+    if (nitrogen_window_world_status && nitrogen_window_report && nitrogen_option_get) {
+        NitrogenWorldStatusV1 w{};
+        nitrogen_window_world_status(&w);
+        int ww = 0, wh = 0, aw = 0, ah = 0, vsync = 0, env = 0;
+        nitrogen_window_report(&ww, &wh, &aw, &ah, &vsync, &env);
+        char v[600];
+        // Option indices: 4 = aspect, 5 = vsync (compat/nitrogen_options.h).
+        std::snprintf(v, sizeof v,
+            "{\"frame\":%llu,\"aspect_option\":%d,\"vsync_option\":%d,\"vsync_effective\":%d,"
+            "\"vsync_env_override\":%d,\"window\":[%d,%d],\"game_area\":[%d,%d],"
+            "\"world_percent\":%d,\"world_requested\":[%d,%d],\"world_actual\":[%d,%d],"
+            "\"world_reason\":%d,\"max_texture\":%d}",
+            (unsigned long long)s_frame_count, nitrogen_option_get(4), nitrogen_option_get(5), vsync, env,
+            ww, wh, aw, ah, w.percent, w.requested_w, w.requested_h, w.actual_w, w.actual_h, w.reason,
+            w.max_texture);
+        info("display_status", v);
+    }
 }
 
 void write_raw(const std::string &name, int w, int h, int channels, const uint8_t *data) {

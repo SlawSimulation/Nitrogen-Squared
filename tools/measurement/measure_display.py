@@ -286,13 +286,19 @@ def run_once(exe: Path, info: dict, run: dict, out: Path, display_index: int | N
     config = write_config(run, run_dir, display_index)
     (run_dir / "nitrogen-options.ini").write_text(
         f"video_mode {run.get('video_mode', 0)}\nhud_scale 0\nrender_percent {run.get('render_percent', 100)}\n"
-        f"master_volume {100 if audible else 0}\n", encoding="utf-8")
+        f"master_volume {100 if audible else 0}\naspect {run.get('aspect_option', 0)}\nvsync {run.get('vsync', 1)}\n",
+        encoding="utf-8")
     from run_runtime import runtime_environment
     env = runtime_environment(info["work"], render_worker=None)
     env.update(NITROGEN_MEASURE_CONFIG=str(config), NITROGEN_OPTIONS_FILE=str(run_dir / "nitrogen-options.ini"),
-               NITROGEN_NATIVE_DISC_BIN=str(info["disc_bin"]), PSX_VSYNC=str(run.get("vsync", 1)),
+               NITROGEN_NATIVE_DISC_BIN=str(info["disc_bin"]),
                PSX_OVERLAY_CAPTURES=str(run_dir / "overlay_captures.json"),
                PSX_OVERLAY_CAPTURE_ROOT=str(run_dir / "overlay-private"))
+    # V0 runs set VSync for the process (as before); V1 runs use the player's
+    # own VSync setting, so the developer override must be absent.
+    env.pop("PSX_VSYNC", None)
+    if run.get("vsync_via", "env") == "env":
+        env["PSX_VSYNC"] = str(run.get("vsync", 1))
     if run.get("renderer") == "software":
         env["SDL_RENDER_DRIVER"] = "software"   # tooling checks on hosts without OpenGL 3
     command = [str(exe), "--game", str(info["game"]), "--no-launcher", "--renderer", run.get("renderer", "opengl"),
@@ -346,12 +352,12 @@ def analyse_run(run: dict, run_dir: Path, code, seconds: float, keep_raw: bool) 
     return dict(
         id=run["id"], kind=run["kind"], status=status, reason=reason, seconds=seconds,
         requested={k: run.get(k) for k in ("width", "height", "refresh", "aspect", "render_percent", "vsync",
-                                          "video_mode", "route")},
+                                          "video_mode", "route", "aspect_option", "vsync_via")},
         actual=dict(window_pixels=pixels, game_area=[pixels[0], pixels[1] - reserved] if pixels else None,
                     menu_bar_reserved=reserved, fullscreen=actual.get("fullscreen"),
                     display_mode=display_mode, window_mode=actual.get("window_mode"),
                     ui_step=actual.get("ui_step"), world_raster=list(world),
-                    scale=scale),
+                    scale=scale, display_status=(fixture.get("display_status") or [None])[-1]),
         frames=report.frame_analysis(frames, timing, swaps) if frames else None,
         presentation=report.presentation_analysis(swaps, refresh, timing.get("present_kind", 0),
                                                   report.scene_map(frames, timing, swaps) if frames else None),
@@ -385,7 +391,10 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--installation", type=Path, default=ROOT,
                    help="Folder containing .local (a portable Nitrogen-Squared folder or this source checkout)")
-    p.add_argument("--preset", choices=["probe", "discover", "golden", "quick", "full", "stutter"], default="quick")
+    p.add_argument("--preset", choices=["probe", "discover", "golden", "quick", "full", "stutter", "v1"],
+                   default="quick")
+    p.add_argument("--baseline", type=Path,
+                   help="An earlier report.json (for example V0's) to compare the golden screenshots with")
     p.add_argument("--display", type=int, help="SDL display index to test (default: the widest display)")
     p.add_argument("--only", action="append", default=[], help="Run only plan entries whose id contains this text")
     p.add_argument("--renderer", choices=["opengl", "software"], default="opengl",
@@ -400,6 +409,7 @@ def main(argv=None) -> int:
         print(json.dumps(windows_displays.inventory(), indent=2))
         return 0
     try:
+        baseline = json.loads(args.baseline.read_text(encoding="utf-8")) if args.baseline else None
         info = locate(args.installation)
         stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
         out = private(info["local"] / "measurements" / f"display-{stamp}")
@@ -443,6 +453,7 @@ def main(argv=None) -> int:
             gpu=next((r["gl"] for r in results if r.get("gl")), None),
             sdl_displays=displays, tested_display=display, windows_displays=windows_displays.inventory(),
             golden_determinism=determinism, runs=results,
+            baseline_comparison=report.compare_baseline(baseline, results) if baseline else None,
             limits=["Present times are when the swap call returned, not scanout; compositor queueing is invisible.",
                     "Windowed sizes larger than the display are rendered at that size but not fully visible; "
                     "they are reported as windowed-oversized, not as tested display modes.",
@@ -466,6 +477,7 @@ def summary(doc: dict) -> str:
     d = doc.get("tested_display") or {}
     lines += [f"Display: {d.get('name')} {d.get('bounds')} desktop {d.get('desktop')}", "",
               f"Golden determinism: {doc['golden_determinism']}", "",
+              *([f"Compared with baseline: {doc['baseline_comparison']}", ""] if doc.get("baseline_comparison") else []),
               "| Run | Status | Window | Display mode | 3D raster | Game fps (gameplay) | Game present interval p50/p99 ms | Hitches | Hitches by scene |",
               "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     for r in doc["runs"]:
@@ -482,6 +494,19 @@ def summary(doc: dict) -> str:
                      f"{mode.get('w')}x{mode.get('h')}@{mode.get('refresh')} | {r['actual'].get('world_raster')} | "
                      f"{f.get('game_frame_rate')} | {iv.get('p50')}/{iv.get('p99')} | "
                      f"{frames.get('hitch_count')} | {breakdown} |")
+    v1 = [r for r in doc["runs"] if (r.get("actual") or {}).get("display_status")]
+    if v1:
+        lines += ["", "| Run | Aspect option | Window | Game area | VSync option/effective | 3D requested | 3D actual | 3D limit |",
+                  "| --- | --- | --- | --- | --- | --- | --- | --- |"]
+        reasons = {0: "full size", 1: "texture limit", 2: "allocation refused", 3: "not used"}
+        for r in v1:
+            s = r["actual"]["display_status"]
+            lines.append(f"| {r['id']} | {s.get('aspect_option')} | {s.get('window')} | {s.get('game_area')} | "
+                         f"{s.get('vsync_option')}/{s.get('vsync_effective')}"
+                         f"{' (PSX_VSYNC)' if s.get('vsync_env_override') else ''} | "
+                         f"{s.get('world_percent')}% {s.get('world_requested')} | {s.get('world_actual')} | "
+                         f"{reasons.get(s.get('world_reason'), s.get('world_reason'))}"
+                         f"{' (max ' + str(s.get('max_texture')) + ')' if s.get('max_texture') else ''} |")
     lines += ["", "Hitches are guest frames over 25 ms, excluding native-movie playback and the "
               f"{report.CAPTURE_SETTLE_FRAMES} frames after each present capture. {report.GPU_SPAN_NOTE}"]
     return "\n".join(lines) + "\n"

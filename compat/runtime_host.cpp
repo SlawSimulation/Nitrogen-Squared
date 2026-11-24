@@ -53,10 +53,30 @@ static void nitrogen_window_update()
             (void)nitrogen_option_set(NITROGEN_VIDEO_MODE,applied_mode);
         }
     }
-    int width = 0, height = 0;
-    SDL_GL_GetDrawableSize(sdl_window, &width, &height);
-    height -= nitrogen_menu_reserved_height();
-    if (width <= 0 || height <= 0) return; // minimized: keep the last valid frame
+    // VSync: ON keeps the framework's startup choice, OFF presents at once.
+    static int startup_vsync = g_video_vsync, applied_vsync = g_video_vsync;
+    // A framework change (live settings, mod policy) becomes the new baseline.
+    if (g_video_vsync != applied_vsync) startup_vsync = applied_vsync = g_video_vsync;
+    const char *vsync_env = std::getenv("PSX_VSYNC");
+    const int vsync = nitrogen_window_vsync_value(nitrogen_option_get(NITROGEN_VSYNC), startup_vsync,
+                                                  vsync_env != nullptr, vsync_env ? std::atoi(vsync_env) : 0);
+    if (vsync != applied_vsync) {
+        g_video_vsync = vsync;
+        apply_present_cadence();
+        log_present_cadence();
+        applied_vsync = vsync;
+    }
+    nitrogen_window_report_vsync(applied_vsync, vsync_env != nullptr);
+    int window_w = 0, window_h = 0;
+    SDL_GL_GetDrawableSize(sdl_window, &window_w, &window_h);
+    window_h -= nitrogen_menu_reserved_height();
+    if (window_w <= 0 || window_h <= 0) return; // minimized: keep the last valid frame
+    // AUTO fills the window (the original behaviour); a fixed ratio uses the
+    // largest centred rectangle of it, which the presentation letterboxes.
+    const int aspect = nitrogen_option_get(NITROGEN_ASPECT);
+    int width = window_w, height = window_h;
+    nitrogen_window_game_area(aspect, window_w, window_h, &width, &height);
+    nitrogen_window_report_window(window_w, window_h);
     nitrogen_window_publish(width, height);
     // The old title config may already exist after an update. Resolve the
     // requested sharp presentation here, rather than requiring a reimport.
@@ -67,8 +87,12 @@ static void nitrogen_window_update()
     nitrogen_gpu_enable_ui();
     gpu_ws_set_auto_ui_in_place(0);
     int num = width, den = height;
-    const int divisor = aspect_gcd(num, den);
-    num /= divisor; den /= divisor;
+    if (aspect == NITROGEN_ASPECT_AUTO) {
+        const int divisor = aspect_gcd(num, den);
+        num /= divisor; den /= divisor;
+    } else {
+        nitrogen_window_aspect_ratio(aspect, width, height, &num, &den);
+    }
     // Project into the game's authored viewport, so its clipper receives
     // the wider field before rejecting polygons. Unprojected menu backdrop
     // sprites cover the drawable with a separate uniform transform.

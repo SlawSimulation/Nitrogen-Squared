@@ -6,6 +6,9 @@
 #ifdef NITROGEN_WINDOW_DISPLAY
 #include "window_display.h"
 #include "nitrogen_options.h"
+#include "gpu_gl_renderer.h"
+#include "gl_scale_limits.h"
+extern "C" int psx_present_vsync_owns_cadence(void);
 #endif
 #include "../native/movie_player.h"
 #include <SDL3/SDL.h>
@@ -48,6 +51,75 @@ void save_preferences(DesktopMenu &m)
         << "\nperformance " << m.performance
         << "\naudio " << m.audio << '\n';
 }
+
+#ifdef NITROGEN_WINDOW_DISPLAY
+const char *world_reason_text(int reason)
+{
+    switch (reason) {
+    case NITROGEN_WORLD_TEXTURE_LIMIT: return "limited by the graphics card's largest texture";
+    case NITROGEN_WORLD_ALLOCATION_LIMIT: return "limited: the graphics card refused a larger allocation";
+    case NITROGEN_WORLD_NOT_USED: return "not used on this screen (movies and 2D images keep their own size)";
+    default: return "full size";
+    }
+}
+// Display settings and what the renderer actually produced. Values that
+// cannot be read are shown as unavailable, never guessed.
+void display_settings(DesktopMenu &m)
+{
+    static const char *aspects[] = {"Auto (fill the window)", "Original 4:3", "16:9", "21:9", "32:9"};
+    int aspect = nitrogen_option_get(NITROGEN_ASPECT);
+    if (ImGui::Combo("Aspect", &aspect, aspects, IM_ARRAYSIZE(aspects)))
+        nitrogen_option_set(NITROGEN_ASPECT, aspect);
+    bool vsync = nitrogen_option_get(NITROGEN_VSYNC) != 0;
+    if (ImGui::Checkbox("VSync", &vsync)) nitrogen_option_set(NITROGEN_VSYNC, vsync ? 1 : 0);
+
+    int ww = 0, wh = 0, aw = 0, ah = 0, effective = 0, env = 0;
+    nitrogen_window_report(&ww, &wh, &aw, &ah, &effective, &env);
+    ImGui::Text("Window: %d x %d   Game area: %d x %d", ww, wh, aw, ah);
+    ImGui::Text("Interface scale: %dx", aw > 0 && ah > 0 ? nitrogen_window_ui_step(aw, ah) : 0);
+
+    NitrogenWorldStatus world{};
+    nitrogen_window_world_status(&world);
+    if (world.reason == NITROGEN_WORLD_NOT_USED) {
+        ImGui::Text("3D scene: %s", world_reason_text(world.reason));
+    } else {
+        ImGui::Text("3D scene: requested %d%% = %d x %d", world.percent, world.requested_w, world.requested_h);
+        ImGui::Text("          actual %d x %d (%s)", world.actual_w, world.actual_h, world_reason_text(world.reason));
+        if (world.max_texture > 0) ImGui::Text("          graphics card texture limit: %d", world.max_texture);
+    }
+
+    // The renderer's own surface report waits for the render thread: read it
+    // at most once a second, and only while this window is open.
+    static GlScaleInfo scale{};
+    static int scale_ok = 0;
+    static double scale_time = -10;
+    const double now = SDL_GetTicks() / 1000.0;
+    if (now - scale_time >= 1.0) { scale_ok = gl_renderer_scale_info(&scale); scale_time = now; }
+    if (scale_ok && scale.fbo_w > 0) {
+        ImGui::Text("Picture surface: %d x %d (scale %d)", scale.fbo_w, scale.fbo_h, scale.effective);
+        if (scale.clamp_reason)
+            ImGui::Text("          limited by:%s%s%s", (scale.clamp_reason & PSX_GL_SCALE_TEXTURE) ? " texture size" : "",
+                        (scale.clamp_reason & PSX_GL_SCALE_BUDGET) ? " memory budget" : "",
+                        (scale.clamp_reason & PSX_GL_SCALE_CEILING) ? " build ceiling" : "");
+    } else {
+        ImGui::TextUnformatted("Picture surface: unavailable");
+    }
+
+    const SDL_DisplayMode *mode = m.window ? SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(m.window)) : nullptr;
+    const float refresh = mode ? mode->refresh_rate : 0.0f;
+    ImGui::Text("VSync in effect: %s%s", effective ? "on" : "off",
+                env ? " (set by PSX_VSYNC)" : (vsync && !effective ? " (turned off by the game's configuration)" : ""));
+    if (refresh > 0) {
+        ImGui::Text("Display refresh: %.2f Hz; the game runs at 59.94 Hz.", refresh);
+        if (effective && !psx_present_vsync_owns_cadence())
+            ImGui::TextWrapped("This refresh rate is not a match for the game, so the game keeps its own pace and "
+                               "frames are shown for unequal numbers of refreshes. A 60 Hz or 120 Hz mode is even.");
+    } else {
+        ImGui::TextUnformatted("Display refresh: unavailable");
+    }
+    ImGui::TextUnformatted("Sharp textures and video. Movies retain their proportions.");
+}
+#endif
 
 void fullscreen(DesktopMenu &m)
 {
@@ -261,12 +333,7 @@ void draw(void *context, int, int)
             if (ImGui::Checkbox("Fullscreen", &full)) fullscreen(m);
 #ifdef NITROGEN_WINDOW_DISPLAY
             ImGui::SeparatorText("Display");
-            const ImGuiIO &io = ImGui::GetIO();
-            const int area_w = (int)(io.DisplaySize.x * io.DisplayFramebufferScale.x);
-            const int area_h = std::max(1, (int)(io.DisplaySize.y * io.DisplayFramebufferScale.y) - reserved.load());
-            ImGui::Text("Game area: %d x %d", area_w, area_h);
-            ImGui::Text("Interface scale: %dx", nitrogen_window_ui_step(area_w, area_h));
-            ImGui::TextUnformatted("Sharp textures and video. Movies retain their proportions.");
+            display_settings(m);
 #endif
             ImGui::SeparatorText("Menu");
             changed |= ImGui::Checkbox("Show menu bar (F1)", &m.visible);

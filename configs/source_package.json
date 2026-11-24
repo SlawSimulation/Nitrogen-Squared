@@ -130,6 +130,7 @@
   "tests/test_code_inventory.py",
   "tests/test_cue_layouts.py",
   "tests/test_disc.py",
+  "tests/test_display_options.py",
   "tests/test_extract_assets.py",
   "tests/test_game_icon.py",
   "tests/test_game_options.py",

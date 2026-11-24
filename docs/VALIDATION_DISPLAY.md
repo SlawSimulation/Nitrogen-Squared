@@ -1,5 +1,62 @@
 # Display validation
 
+## V1 Aspect, VSync and 3D-size reporting (feature branch, 0.2.2, unreleased) — 2026-11-24
+
+V1 adds two player settings, in the launcher's Settings > Display and in F1
+Settings only (the game's own Video menu is unchanged), and reports what the
+renderer actually produced. VERSION stays 0.2.2; no tag or release. Native
+selected code, its coverage (38.4156% linked / 61.5844% outside), guest clocks
+and the pinned framework checkout are unchanged. The compiled-game inputs
+change, so players get one rebuild; saves, settings, mods and imports are kept.
+
+### Behaviour
+
+- Aspect (`aspect` in nitrogen-options.ini): 0 Auto, 1 Original 4:3, 2 16:9,
+  3 21:9, 4 32:9. Auto takes the original path unchanged: the whole game area,
+  its gcd-reduced ratio and the same projection. A fixed ratio uses the
+  largest centred rectangle of exactly that ratio (21:9 is 21/9 = 2.333, not
+  64:27). The game area, interface scale, world raster and internal scale are
+  computed from that rectangle; the display aspect given to the renderer is the
+  ratio itself, so the existing presentation letterbox draws the same
+  rectangle with black bars. `nitrogen_window_game_area` uses the letterbox's
+  integer arithmetic; a test checks they agree at every size tested.
+- VSync (`vsync`): 1 On keeps the framework's own startup choice (which a mod
+  or configuration may already have forced off); 0 Off presents immediately.
+  A change goes through the framework's `apply_present_cadence`, live. A
+  developer `PSX_VSYNC` value still wins and is shown as such.
+- Defaults are Auto and On. Files written before V1 have neither key and read
+  as Auto and On; invalid values are ignored.
+- 3D scene clamping: the GL owner publishes GL_MAX_TEXTURE_SIZE, and any world
+  target the driver refuses. A request above the limit uses the largest
+  proportional size within it (for example 7680x2160 at 200% requests
+  43211x9216; with a 32768 limit it uses 32768x6988, not 100%). After a refusal,
+  sizes step to below 90% of the refused size. Before the first limit report
+  (one frame) the previous fallback can still occur.
+- F1 Settings shows the window, game area, interface scale, requested and
+  actual 3D size with the reason, the GPU texture limit, the picture surface
+  and its framework limit, the VSync in effect and the display refresh, with a
+  note when that refresh cannot match the game's 59.94 Hz. The framework's
+  surface report waits for the render thread, so it is read at most once a
+  second and only while Settings is open.
+
+### Local validation (this host)
+
+| Check | Result |
+| --- | --- |
+| Aspect fit equals the presentation letterbox (all four ratios, 5,168 window sizes), exact 21:9, Auto = window | pass (tests/test_display_options.py) |
+| 3D clamping: fits below the limit unchanged; 7680x2160 200% uses the largest proportional size; refused allocations step down and keep the smallest refusal; movies/2D report "not used" | pass |
+| VSync policy (On keeps framework choice, Off, forced-off kept, PSX_VSYNC wins) and live wiring to apply_present_cadence | pass |
+| Option persistence: defaults, pre-V1 files, invalid values, launcher read/save | pass |
+| Launcher Settings: Aspect/VSync start at Auto/On and save through the bridge; layout at three window sizes | pass (12 browser tests) |
+| Real normal build compiles and links with V1 (two jobs) | pass |
+| Software-renderer golden route on the rebuilt game against the pre-V1 local V0 golden report | pass: 13/13 captures identical to the pre-V1 report (build 618eea77), and 13/13 between the two V1 runs |
+| OpenGL presentation: bars, Auto pixel identity, F1 report, VSync switching, clamping on a real GPU | not possible here (OpenGL 1.1 host); pending the owner's PC |
+
+The software renderer does not run the window-display path, so the local
+golden check covers the game and the new option keys, not the V1
+presentation. The `v1` measurement preset and `--baseline` comparison are for
+the owner's OpenGL check: Auto golden screenshots must match V0 byte for byte.
+
 ## V0 display baseline and measurement tooling (feature branch, unreleased) — 2026-11-23
 
 V0 adds measurement tooling only. The game, its rendering, timing, assets,
@@ -215,7 +272,7 @@ are unchanged):
   checked with synthetic data only and is first confirmed on the next
   OpenGL run.
 
-### Pending
+### Closure
 
-`full` (120/60 Hz modes, 7680x2160) was not run and is not required. V1 does
-not start until the owner reviews these findings.
+The owner reviewed these findings and closed V0 on 2026-11-24. `full` (120/60
+Hz modes, 7680x2160) was not run and is not required.

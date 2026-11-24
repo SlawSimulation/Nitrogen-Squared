@@ -1,4 +1,5 @@
 #include "window_display.h"
+#include "nitrogen_options.h"
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -7,6 +8,12 @@ namespace {
 std::atomic<unsigned long long> drawable{0};
 std::atomic<int> ui_scale{0};
 std::atomic<unsigned long long> world_size{0};
+std::atomic<int> world_texture_limit{0};
+std::atomic<unsigned long long> world_refused{0};      // smallest refused w<<32|h
+std::atomic<unsigned long long> world_requested{0};
+std::atomic<int> world_percent{0}, world_reason{NITROGEN_WORLD_NOT_USED};
+std::atomic<unsigned long long> window_size{0};
+std::atomic<int> vsync_value{1}, vsync_env{0};
 std::atomic<unsigned> menu_page{0};
 std::atomic<uint64_t> host_frame{0}, menu_frame{0};
 std::atomic<bool> close_requested{false};
@@ -72,13 +79,106 @@ extern "C" void nitrogen_window_ui_scale(int step)
     if (step == 0 || step == 2 || step == 3 || step == 4 || step == 6)
         ui_scale.store(step, std::memory_order_release);
 }
+static unsigned long long pack(unsigned long long w,unsigned long long h) { return (w<<32)|h; }
+// Scale (w,h) uniformly so neither exceeds (lw,lh); unchanged when it fits.
+static void fit_within(unsigned &w,unsigned &h,unsigned lw,unsigned lh)
+{
+    if (w<=lw && h<=lh) return;
+    // Compare w/lw with h/lh without floating point: the larger ratio binds.
+    if (static_cast<unsigned long long>(w)*lh >= static_cast<unsigned long long>(h)*lw) {
+        h=static_cast<unsigned>(static_cast<unsigned long long>(h)*lw/w); w=lw;
+    } else {
+        w=static_cast<unsigned>(static_cast<unsigned long long>(w)*lh/h); h=lh;
+    }
+    w=std::max(1u,w); h=std::max(1u,h);
+}
 extern "C" void nitrogen_window_world_raster(int width,int height,int sw,int sh,int percent)
 {
-    if (sw!=364 || sh<1 || width<1 || height<1) { world_size=0; return; }
+    world_percent.store(percent,std::memory_order_relaxed);
+    if (sw!=364 || sh<1 || width<1 || height<1) {
+        world_requested=0; world_size=0; world_reason=NITROGEN_WORLD_NOT_USED; return;
+    }
     const int viewport_w=static_cast<long long>(width)*3<static_cast<long long>(height)*4?height*4/3:width;
-    const unsigned w=static_cast<unsigned>((static_cast<long long>(viewport_w)*percent*1024+100*sw-1)/(100*sw));
-    const unsigned h=static_cast<unsigned>((static_cast<long long>(height)*percent*512+100*sh-1)/(100*sh));
-    world_size.store((static_cast<unsigned long long>(w)<<32)|h,std::memory_order_release);
+    unsigned w=static_cast<unsigned>((static_cast<long long>(viewport_w)*percent*1024+100*sw-1)/(100*sw));
+    unsigned h=static_cast<unsigned>((static_cast<long long>(height)*percent*512+100*sh-1)/(100*sh));
+    world_requested.store(pack(w,h),std::memory_order_relaxed);
+    int reason=NITROGEN_WORLD_FULL;
+    // The largest proportional size the driver accepts, never a silent 100%.
+    const int limit=world_texture_limit.load(std::memory_order_acquire);
+    if (limit>0 && (w>static_cast<unsigned>(limit) || h>static_cast<unsigned>(limit))) {
+        fit_within(w,h,static_cast<unsigned>(limit),static_cast<unsigned>(limit));
+        reason=NITROGEN_WORLD_TEXTURE_LIMIT;
+    }
+    const auto refused=world_refused.load(std::memory_order_acquire);
+    if (refused) {
+        // Step below the refused size: 90% of it, in each dimension.
+        const unsigned rw=static_cast<unsigned>(refused>>32)*9/10, rh=static_cast<unsigned>(refused)*9/10;
+        if (w>=rw || h>=rh) {
+            fit_within(w,h,std::max(1u,rw-1),std::max(1u,rh-1));
+            reason=NITROGEN_WORLD_ALLOCATION_LIMIT;
+        }
+    }
+    world_reason.store(reason,std::memory_order_relaxed);
+    world_size.store(pack(w,h),std::memory_order_release);
+}
+extern "C" void nitrogen_window_world_limit(int max_texture)
+{ if (max_texture>0) world_texture_limit.store(max_texture,std::memory_order_release); }
+extern "C" void nitrogen_window_world_failed(int width,int height)
+{
+    if (width<1 || height<1) return;
+    auto old=world_refused.load(std::memory_order_acquire);
+    const auto now=pack(static_cast<unsigned>(width),static_cast<unsigned>(height));
+    // Keep the smallest refusal: a later, larger request cannot raise the cap.
+    while ((!old || static_cast<unsigned long long>(width)*height <
+                    (old>>32)*static_cast<unsigned>(old)) &&
+           !world_refused.compare_exchange_weak(old,now,std::memory_order_acq_rel)) {}
+}
+extern "C" void nitrogen_window_world_status(NitrogenWorldStatus *out)
+{
+    if (!out) return;
+    const auto req=world_requested.load(std::memory_order_relaxed), act=world_size.load(std::memory_order_acquire);
+    out->percent=world_percent.load(std::memory_order_relaxed);
+    out->requested_w=static_cast<int>(req>>32); out->requested_h=static_cast<int>(static_cast<unsigned>(req));
+    out->actual_w=static_cast<int>(act>>32); out->actual_h=static_cast<int>(static_cast<unsigned>(act));
+    out->reason=world_reason.load(std::memory_order_relaxed);
+    out->max_texture=world_texture_limit.load(std::memory_order_acquire);
+}
+extern "C" void nitrogen_window_report_window(int width,int height)
+{ window_size.store(pack(static_cast<unsigned>(std::max(0,width)),static_cast<unsigned>(std::max(0,height))),std::memory_order_release); }
+extern "C" void nitrogen_window_report_vsync(int value,int env_override)
+{ vsync_value.store(value,std::memory_order_relaxed); vsync_env.store(env_override?1:0,std::memory_order_relaxed); }
+extern "C" void nitrogen_window_report(int *ww,int *wh,int *aw,int *ah,int *vsync,int *env_override)
+{
+    const auto win=window_size.load(std::memory_order_acquire), area=drawable.load(std::memory_order_acquire);
+    *ww=static_cast<int>(win>>32); *wh=static_cast<int>(static_cast<unsigned>(win));
+    *aw=static_cast<int>(area>>32); *ah=static_cast<int>(static_cast<unsigned>(area));
+    *vsync=vsync_value.load(std::memory_order_relaxed); *env_override=vsync_env.load(std::memory_order_relaxed);
+}
+extern "C" int nitrogen_window_vsync_value(int option,int startup,int env_set,int env_value)
+{
+    if (env_set) return env_value;
+    return option==0 ? 0 : startup;
+}
+extern "C" void nitrogen_window_aspect_ratio(int aspect,int width,int height,int *num,int *den)
+{
+    static const int ratios[][2]{{4,3},{16,9},{21,9},{32,9}};
+    if (aspect>=NITROGEN_ASPECT_4_3 && aspect<=NITROGEN_ASPECT_32_9) {
+        *num=ratios[aspect-1][0]; *den=ratios[aspect-1][1]; return;
+    }
+    int a=std::max(1,width), b=std::max(1,height);
+    while (b) { const int t=a%b; a=b; b=t; }
+    *num=std::max(1,width)/a; *den=std::max(1,height)/a;
+}
+extern "C" void nitrogen_window_game_area(int aspect,int width,int height,int *area_w,int *area_h)
+{
+    if (aspect<NITROGEN_ASPECT_4_3 || aspect>NITROGEN_ASPECT_32_9 || width<1 || height<1) {
+        *area_w=width; *area_h=height; return;
+    }
+    int num=1,den=1; nitrogen_window_aspect_ratio(aspect,width,height,&num,&den);
+    // Identical to nitrogen_menu_letterbox's fit of the usable height.
+    int dw=width, dh=static_cast<int>(static_cast<long long>(width)*den/num);
+    if (dh>height) { dh=height; dw=static_cast<int>(static_cast<long long>(height)*num/den); }
+    *area_w=dw; *area_h=dh;
 }
 extern "C" void nitrogen_window_world_size(int *width,int *height)
 {

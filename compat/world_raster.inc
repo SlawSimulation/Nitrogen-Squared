@@ -49,6 +49,8 @@ static int nitrogen_world_begin(int clip)
     if(width!=nitrogen_world_width || height!=nitrogen_world_height) {
         GLint limit=0;
         glGetIntegerv(GL_MAX_TEXTURE_SIZE,&limit);
+        /* The window policy clamps later sizes to this limit and reports it. */
+        nitrogen_window_world_limit(limit);
         if(width>limit || height>limit) return 0;
         nitrogen_world_delete();
         nitrogen_world_tex=make_tex(GL_RGBA8,width,height,GL_RGBA,GL_UNSIGNED_BYTE);
@@ -57,7 +59,9 @@ static int nitrogen_world_begin(int clip)
         p_glRenderbufferStorage(PSXGL_RENDERBUFFER,PSXGL_DEPTH24_STENCIL8,width,height);
         p_glBindRenderbuffer(PSXGL_RENDERBUFFER,0);
         if(!make_fbo(&nitrogen_world_fbo,nitrogen_world_tex,nitrogen_world_rb)) {
-            nitrogen_world_delete(); return 0;
+            nitrogen_world_delete();
+            nitrogen_window_world_failed(width,height); /* next size steps below */
+            return 0;
         }
         nitrogen_world_width=width; nitrogen_world_height=height;
     }

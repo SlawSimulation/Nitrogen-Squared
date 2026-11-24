@@ -5,7 +5,12 @@
 extern "C" {
 #endif
 enum { NITROGEN_WINDOWED, NITROGEN_BORDERLESS, NITROGEN_FULLSCREEN };
-enum { NITROGEN_VIDEO_MODE, NITROGEN_HUD_SCALE, NITROGEN_RENDER_PERCENT, NITROGEN_MASTER_VOLUME };
+enum { NITROGEN_VIDEO_MODE, NITROGEN_HUD_SCALE, NITROGEN_RENDER_PERCENT, NITROGEN_MASTER_VOLUME,
+       NITROGEN_ASPECT, NITROGEN_VSYNC, NITROGEN_OPTION_COUNT };
+/* Game-area shape inside the window. AUTO fills the window (the original
+ * host behaviour); the others fit that exact ratio and add black bars. */
+enum { NITROGEN_ASPECT_AUTO, NITROGEN_ASPECT_4_3, NITROGEN_ASPECT_16_9, NITROGEN_ASPECT_21_9,
+       NITROGEN_ASPECT_32_9 };
 /* Call once on the main thread. A launcher-supplied path survives rebuilds. */
 void nitrogen_options_init(const char *base_path);
 int nitrogen_option_get(int option);

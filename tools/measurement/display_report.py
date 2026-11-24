@@ -121,7 +121,7 @@ def read_info(path: Path) -> dict:
     """fixture-info.json is a list of one-key objects. Repeatable sample keys
     become lists; every other key keeps its first value."""
     repeated = ("scale_sample", "memory_sample", "window_sample", "guest_capture", "present_capture",
-                "stage_anchor")
+                "stage_anchor", "display_status")
     merged: dict = {k: [] for k in repeated}
     if not path.is_file():
         return merged
@@ -490,7 +490,30 @@ def compare_goldens(first: dict[str, str], second: dict[str, str]) -> dict:
                 deterministic=bool(names) and len(same) == len(names))
 
 
+GOLDEN_RUN = "win-1920x1080-100pct-vsync1-golden-a"
+
+
+def compare_baseline(baseline: dict, runs: list[dict]) -> dict:
+    """Compare this report's first golden run with the same run in an earlier
+    report, capture by capture (guest scanout and presented frame). Identical
+    hashes mean byte-identical decoded pixels."""
+    def golden(rs):
+        return next((r for r in rs if r.get("id", "").endswith("-golden-a") and r.get("status") == "completed"), None)
+    old, new = golden(baseline.get("runs") or []), golden(runs)
+    if not old or not new:
+        return dict(identical_to_baseline=None, reason="both reports need a completed golden-a run")
+    if old["id"] != new["id"]:
+        return dict(identical_to_baseline=None,
+                    reason=f"different golden runs ({old['id']} and {new['id']}); sizes must match")
+    result = compare_goldens(old.get("captures") or {}, new.get("captures") or {})
+    return dict(baseline_created=baseline.get("created"), baseline_build=(baseline.get("build") or {}).get(
+                    "build_identity", {}).get("inputs_sha256"),
+                compared=result["compared"], identical=result["identical"], differing=result["differing"],
+                identical_to_baseline=result["deterministic"])
+
+
 # ---- matrix -----------------------------------------------------------------
+ASPECTS = [(0, "auto"), (1, "4x3"), (2, "16x9"), (3, "21x9"), (4, "32x9")]
 WINDOWED = [(1440, 1080, "4:3"), (1920, 1080, "16:9"), (2520, 1080, "21:9"), (2560, 1440, "16:9"),
             (3840, 1080, "32:9"), (5120, 1440, "32:9"), (7680, 2160, "32:9")]
 EXCLUSIVE = [(3840, 1080), (5120, 1440), (7680, 2160), (1920, 1080), (2560, 1440)]
@@ -538,6 +561,21 @@ def plan_runs(display: dict, preset: str) -> list[dict]:
         g.update(golden=True, captures=DEFAULT_CAPTURES)
         runs.append(g)
     if preset == "golden":
+        return runs
+    if preset == "v1":
+        # Display V1 settings, applied through the player's options file (not
+        # PSX_VSYNC), in the player's Borderless mode at the desktop size.
+        dw, dh = desktop.get("w") or bounds[2], desktop.get("h") or bounds[3]
+        for option, label in ASPECTS:
+            runs.append(dict(id=f"v1-aspect-{label}", kind="borderless (V1 Aspect setting)", width=dw, height=dh,
+                             aspect=label, aspect_option=option, render_percent=100, vsync=1, vsync_via="option",
+                             route="default", video_mode=1, mode="none", captures=MATRIX_CAPTURES))
+        runs.append(dict(id="v1-vsync-off", kind="borderless (V1 VSync setting off)", width=dw, height=dh,
+                         aspect="auto", aspect_option=0, render_percent=100, vsync=0, vsync_via="option",
+                         route="default", video_mode=1, mode="none", captures=MATRIX_CAPTURES))
+        clamp = windowed(7680, 2160, "32:9", 200)
+        clamp.update(id="v1-clamp-7680x2160-200pct")
+        runs.append(clamp)
         return runs
     dw, dh, dr = desktop.get("w"), desktop.get("h"), desktop.get("refresh")
     sizes = WINDOWED if preset == "full" else [s for s in WINDOWED if (s[0], s[1]) in ((3840, 1080), (5120, 1440))]

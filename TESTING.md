@@ -2,6 +2,37 @@
 
 ## Current acceptance and update checks
 
+**Display V1 — Aspect, VSync and 3D-size reporting (feature branch, still 0.2.2).**
+V1 adds two settings, in the launcher's Settings > Display and in F1 Settings
+(not the game's own Video menu): Aspect (Auto, Original 4:3, 16:9, 21:9, 32:9)
+and VSync (On, Off). Auto fills the window exactly as before; the other shapes
+use the largest centred area of that exact ratio (21:9 is 2.333, not 64:27)
+with black bars. VSync On keeps the game's existing VSync behaviour; Off
+presents immediately and can tear. Both apply while playing and are saved in
+nitrogen-options.ini; older files simply read as Auto and On. When the 3D
+scene is larger than the graphics card can make, the game now uses the largest
+proportional size it supports instead of silently dropping to 100%, and F1
+Settings shows the requested size, the actual size and the reason, together
+with the window, game area, interface scale, picture surface and the VSync in
+effect with the display refresh. This changes game build inputs, so the
+launcher rebuilds the game once; saves, settings, mods and the imported disc
+are kept. Native selected code, its coverage (38.4156% linked / 61.5844%
+outside) and the game's timing are unchanged.
+
+Focused checks on the GTX 1080 Ti / 49-inch PC (check N2-DISPLAY-V1):
+1. In a copy of your folder, install the V1 candidate and let the launcher
+   rebuild the game. With Aspect Auto and VSync On, play the opening, menus and
+   a little of level 1: nothing should look different from before.
+2. Run measure_display.py --preset v1 --baseline <your V0 quick report.json>.
+   The summary must say the golden screenshots are identical to the baseline.
+3. In F1 Settings, try each Aspect: the game keeps that shape with black bars,
+   the interface stays sharp and centred, and movies keep their proportions.
+   Turn VSync off and on again; the "VSync in effect" line follows.
+4. Optional: 200% scene resolution in a large window; F1 shows requested and
+   actual 3D sizes and any limit.
+Visual results are pending until checked on your PC: this development host
+only runs the software renderer, which does not use the OpenGL presentation.
+
 **Display V0 — baseline measurement tooling (feature branch, measurement only).**
 V0 adds tools/measurement: a measurement executable linked separately against
 your existing normal game build, and a driver that runs an original controller
@@ -1075,9 +1106,24 @@ Instructions for future maintainers and assistants:
     "runtime": "Windows / Linux x64 \u00b7 USA disc",
     "cart": "",
     "createdAt": "2026-11-10",
-    "description": "Repairs future source mtimes behind the CMake loop, uses 80% desktop thread budgets and displays build stage/detail/workers/elapsed. Retains disc-derived game icon and interrupted-setup repairs. CI and owner verification pending. Corrects pre-1980 bundled-file ZIP metadata rejection; d83eedd source/UI and runtime checks passed before packaging failed. Adds multi-BIN (per-track) CUE import; player and CI verification pending. Adds V0 display measurement tooling (no runtime change)."
+    "description": "Repairs future source mtimes behind the CMake loop, uses 80% desktop thread budgets and displays build stage/detail/workers/elapsed. Retains disc-derived game icon and interrupted-setup repairs. CI and owner verification pending. Corrects pre-1980 bundled-file ZIP metadata rejection; d83eedd source/UI and runtime checks passed before packaging failed. Adds multi-BIN (per-track) CUE import; player and CI verification pending. Adds V0 display measurement tooling (no runtime change). V1 adds Aspect and VSync settings and reports the actual 3D size; one rebuild, owner verification pending."
   },
   "checks": [
+    {
+      "id": "N2-DISPLAY-V1",
+      "title": "Check Aspect, VSync and 3D-size reporting on the ultrawide PC",
+      "area": "Display options (V1)",
+      "required": true,
+      "priority": "high",
+      "steps": [
+        "In a copy of your folder, install the V1 candidate and let the launcher rebuild the game once. Preserve .local and your saves.",
+        "With Aspect Auto and VSync On, play the opening, menus and some of level 1; compare with what you saw before.",
+        "Run measure_display.py --preset v1 --baseline pointing at your V0 quick report.json; check the summary's baseline comparison and the V1 table.",
+        "In F1 Settings, select each Aspect, then turn VSync off and on; read the reported game area, 3D sizes and VSync in effect."
+      ],
+      "expected": "Auto/On looks unchanged and its golden screenshots are identical to V0. Each fixed Aspect keeps its exact shape with centred black bars and a sharp, centred interface. VSync follows the setting. F1 shows requested and actual 3D sizes with the reason for any limit, never a silent 100%.",
+      "context": "Feature branch at 0.2.2; one game rebuild. Coverage and game timing unchanged. Not yet visually checked on hardware."
+    },
     {
       "id": "N2-DISPLAY-BASELINE",
       "title": "Run the V0 display measurements on the ultrawide PC",

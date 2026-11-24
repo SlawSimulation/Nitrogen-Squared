@@ -12,8 +12,10 @@
 #endif
 
 namespace {
-std::array<std::atomic<int>, 4> values{{NITROGEN_WINDOWED, 0, 100, 100}};
-constexpr const char *names[]{"video_mode", "hud_scale", "render_percent", "master_volume"};
+// Defaults keep the original presentation: AUTO aspect fills the window, VSync on.
+std::array<std::atomic<int>, NITROGEN_OPTION_COUNT> values{{NITROGEN_WINDOWED, 0, 100, 100, NITROGEN_ASPECT_AUTO, 1}};
+constexpr const char *names[]{"video_mode", "hud_scale", "render_percent", "master_volume", "aspect", "vsync"};
+static_assert(sizeof(names) / sizeof(names[0]) == NITROGEN_OPTION_COUNT, "one name per option");
 std::mutex preferences_mutex;
 std::string preferences_path;
 bool initialized = false;
@@ -21,7 +23,7 @@ void save()
 {
     if (preferences_path.empty()) return;
     std::ofstream out(preferences_path, std::ios::trunc);
-    for (int i = 0; i < 4; ++i) out << names[i] << ' ' << values[i].load() << '\n';
+    for (int i = 0; i < NITROGEN_OPTION_COUNT; ++i) out << names[i] << ' ' << values[i].load() << '\n';
     if (!out) std::fprintf(stderr, "nitrogen: could not save game options\n");
 }
 bool valid(int key, int value)
@@ -31,6 +33,8 @@ bool valid(int key, int value)
     case NITROGEN_HUD_SCALE: return value == 0 || value == 2 || value == 3 || value == 4 || value == 6;
     case NITROGEN_RENDER_PERCENT: return value >= 25 && value <= 200 && value % 5 == 0;
     case NITROGEN_MASTER_VOLUME: return value >= 0 && value <= 100;
+    case NITROGEN_ASPECT: return value >= NITROGEN_ASPECT_AUTO && value <= NITROGEN_ASPECT_32_9;
+    case NITROGEN_VSYNC: return value == 0 || value == 1;
     default: return false;
     }
 }
@@ -64,7 +68,7 @@ extern "C" void nitrogen_options_init(const char *base)
         std::istringstream row(line);
         std::string name, trailing; int value;
         if (!(row >> name >> value) || row >> trailing) continue;
-        for (int key = 0; key < 4; ++key)
+        for (int key = 0; key < NITROGEN_OPTION_COUNT; ++key)
             if (name == names[key] && valid(key, value)) values[key] = value;
     }
     if (!nitrogen_options_desktop()) values[0] = NITROGEN_BORDERLESS;
@@ -72,7 +76,7 @@ extern "C" void nitrogen_options_init(const char *base)
 }
 extern "C" int nitrogen_option_get(int key)
 {
-    return key >= 0 && key < 4 ? values[key].load(std::memory_order_acquire) : 0;
+    return key >= 0 && key < NITROGEN_OPTION_COUNT ? values[key].load(std::memory_order_acquire) : 0;
 }
 extern "C" int nitrogen_option_set(int key, int value)
 {

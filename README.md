@@ -93,7 +93,7 @@ The Tauri launcher, adapted from [Dittobyte/Recompia](https://github.com/Dittoby
 
 Version 0.1.3 applies these defaults in the compiled game, including upgrades
 from the original stock layout. After updating, use **Play** to rebuild.
-The 0.2.2 setup timestamp, build scheduling, progress and game-icon changes leave native coverage at 38.4156% linked / 61.5844% outside.
+The 0.2.2 setup timestamp, build scheduling, progress and game-icon changes leave native coverage at 38.4156% linked / 61.5844% outside. The Display V1 Aspect and VSync settings (feature branch) are host presentation work and also leave it unchanged.
 Existing custom keyboard profiles remain unchanged; `keybinds.ini` beside the
 game executable stores them. The S key intentionally drives both D-pad Down
 and L1 for menu navigation and braking. Gamepad bindings are unchanged.
