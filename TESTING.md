@@ -29,6 +29,10 @@ Focused checks (check N2-DISPLAY-V12):
    whether it changed straight away or only from the next level.
 Optional: run --preset v1 --baseline again; the golden screenshots must stay
 identical to V0.
+Result on 2026-11-24 (main PC, build 17f52b05…): the owner reports everything
+works: both menus share the display settings, Game extras match the game's
+Extras menu, and Lens type and Camera roll changed from F1 during level 1
+applied straight away. V1.2 is validated on that PC.
 
 **Display V1.1 — HUD position (feature branch, still 0.2.2).**
 A new HUD position setting, next to Aspect in F1 Settings and in the launcher's
@@ -1152,7 +1156,7 @@ Instructions for future maintainers and assistants:
     "runtime": "Windows / Linux x64 \u00b7 USA disc",
     "cart": "",
     "createdAt": "2026-11-10",
-    "description": "Repairs future source mtimes behind the CMake loop, uses 80% desktop thread budgets and displays build stage/detail/workers/elapsed. Retains disc-derived game icon and interrupted-setup repairs. CI and owner verification pending. Corrects pre-1980 bundled-file ZIP metadata rejection; d83eedd source/UI and runtime checks passed before packaging failed. Adds multi-BIN (per-track) CUE import; player and CI verification pending. Adds V0 display measurement tooling (no runtime change). V1 adds Aspect and VSync settings and reports the actual 3D size (validated on the owner's PC). V1.1 adds a HUD position setting (validated on the owner's PC). V1.2 gives the game's Video menu and F1 Settings the same display options and adds the game's Extras to F1; owner verification pending."
+    "description": "Repairs future source mtimes behind the CMake loop, uses 80% desktop thread budgets and displays build stage/detail/workers/elapsed. Retains disc-derived game icon and interrupted-setup repairs. CI and owner verification pending. Corrects pre-1980 bundled-file ZIP metadata rejection; d83eedd source/UI and runtime checks passed before packaging failed. Adds multi-BIN (per-track) CUE import; player and CI verification pending. Adds V0 display measurement tooling (no runtime change). V1 adds Aspect and VSync settings and reports the actual 3D size (validated on the owner's PC). V1.1 adds a HUD position setting (validated on the owner's PC). V1.2 gives the game's Video menu and F1 Settings the same display options and adds the game's Extras to F1 (validated on the owner's PC)."
   },
   "checks": [
     {

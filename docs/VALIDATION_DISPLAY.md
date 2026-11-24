@@ -57,7 +57,7 @@ demo; whether a mid-level change applies immediately is decided by the game.
 | Real normal build with V1.2 (two jobs) | pass (compiled-game inputs `17f52b05…`) |
 | Real game, software renderer, F1-equivalent requests from the measurement fixture: main-menu requests (lens type wide, bonus selectable) written within 100 frames; an invalid value ignored; the game's own Extras menu then showed wide and selectable; mid-level requests (camera roll locked, lens flare damp) written at the next frame; available and unchanged through level 1, bonus, level complete, next-level select, level 2 and high-score entry | pass |
 | First real-game run found the service skipped under the software renderer (it sat after the OpenGL-only early return); moved before it and rerun | fixed |
-| Whether a mid-level lens or camera change shows at once or from the next level; F1 appearance | pending, owner's PC |
+| Owner's PC (inputs `17f52b05…`, installed from `236f5a7`): Video menu and F1 share the display settings; Game extras match the game's Extras menu; Lens type and Camera roll changed from F1 during level 1 applied straight away | pass — V1.2 validated on the owner's PC |
 
 The measurement fixture's `extra_rel` and `ram_dump_rel` keys are maintenance
 aids for this check; their output stays in the private `.local` folder.
