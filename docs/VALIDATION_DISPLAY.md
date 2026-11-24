@@ -112,7 +112,7 @@ on the GPU, which the report records.
   matches within 2%. The pacer then presents on the next refresh, so frames are
   expected to alternate between 2 and 3 refreshes (13.9 / 20.8 ms, 2.4 average).
   VSync off should give even spacing with tearing; 120 Hz is an exact 2x
-  multiple. To be measured.
+  multiple. Measured on hardware: see the owner baseline below.
 - Present times are swap-call returns, not scanout; compositor queueing is not
   visible.
 - Fixture-selected exclusive modes use SDL directly; the player's Fullscreen
@@ -124,11 +124,87 @@ on the GPU, which the report records.
 Still OPEN. The long route crosses two level entries: level 1 (0-330 frames
 after the start press) and level 2 (600 frames from the Cross that starts it),
 labelled as their own scenes, with every hitch attributed. The `stutter` preset
-runs the long route three times. This host cannot reproduce Windows timing, so
-no cause is claimed yet.
+runs the long route three times. The owner's hardware results below reproduce
+the level-2 entry hitches and locate them on the emulation thread; the code
+responsible is not yet identified.
+
+### Owner hardware baseline — 2026-11-24
+
+Measured by the owner with the unchanged normal 0.2.2 build (inputs
+`4dc2fa4b…`, player executable SHA-256 unchanged before and after): Windows 10
+19045, AMD Family 23 Model 8 (16 logical CPUs), NVIDIA GeForce GTX 1080 Ti
+(11264 MiB, driver 582.78, OpenGL 3.3, GL_MAX_TEXTURE_SIZE 32768), Samsung
+C49HG9x at its native 3840x1080 143.999 Hz plus a C27F390 at 1920x1080 60 Hz.
+Variable refresh is believed to be off and is not required. Every mode above
+3840x1080 that the 49-inch lists (4206x1183 to 7680x2160) is above native,
+i.e. GPU-scaled (DSR), not a panel mode. Presets run: probe, `quick` (11 runs)
+and `stutter` (6 runs); all runs completed. Reports and captures stay in the
+owner's `.local/measurements`.
+
+| Result | Value |
+| --- | --- |
+| Golden determinism | 26/26 identical guest captures in each preset; the three long routes also produced identical captures at all 29 points through high-score entry |
+| Gameplay rate, every size/mode tested | 59.94 fps (one display flip per VBlank), including 5120x1440 windowed-oversized at 200% |
+| Emulation thread, level-1/2 gameplay | about 10.4 ms p50, 11-12 ms p99 of the 16.68 ms frame |
+| Render-thread CPU, gameplay | about 2.2-2.5 ms p50 |
+| Exclusive 3840x1080@144, Borderless, Fullscreen | completed; same cadence as windowed |
+| VSync on vs off (exclusive 144 Hz) | indistinguishable at the swap call |
+| Presentation (swap-call returns) | gameplay swaps about every 16.6 ms; swap calls return in about 0.04 ms (non-blocking); movies present at the 144 Hz refresh (the ~4,200 one-refresh intervals per run) |
+
+Memory, driver-reported whole-GPU increase over the idle baseline compared with
+the calculation above:
+
+| Window | 3D | Calculated MiB | Measured increase MiB |
+| --- | ---: | ---: | ---: |
+| 1920x1080 | 100% | 255 | about 260 |
+| 3840x1080 | 100% | 690 | about 790-800 |
+| 3840x1080 | 200% | 1260 | about 1370 |
+| 5120x1440 | 100% | 1254 | about 1405 |
+| 5120x1440 | 200% | 2266 | about 2420 |
+
+The 5120x1440 VRAM surface is exactly 943,718,400 B (S = 15), confirming the
+0.94 GB estimate. 200% at 5120x1440 (28808 px wide) fits the 32768 limit; 200%
+at 7680x2160 (43211 px) would not and was not run in `quick`.
+
+Hitches over 25 ms, after separating measurement effects:
+
+- Level-1 and level-2 gameplay, pause, bonus tally and high-score entry: none
+  from the game in any run. The 65-70 ms frames at 5120x1440 and one 26 ms
+  frame at 3840x1080 200% fall exactly two frames after a present capture
+  (glReadPixels), so they are measurement cost.
+- Level-2 entry, reproduced in all three long runs at the same frames (11610,
+  11622, 11625, 11641 and 11642 after the level-1 start): 26, 57, 47, 31 and
+  25 ms, with the emulation thread busy 20-50 ms in those frames. No capture
+  is near them. This is the game thread running far over budget, not GPU,
+  display or presentation timing.
+- Level complete (frames 10131-10135): five consecutive 34-42 ms frames, the
+  emulation thread busy 34-37 ms, in all three runs; smaller 26-30 ms frames
+  follow, and two 27 ms frames in next-level select.
+- Level-1 entry (frames 5-11): 25-29 ms, emulation-bound, but only in the
+  1920x1080 windowed golden runs; not in 3840x1080 windowed or exclusive runs.
+  Unexplained; small.
+- Menus: frames 721 and 1681 (55-90 ms, emulation-bound) in every run.
+- Frames 180-182 (about 29 s together) are the opening movies playing inside
+  single guest frames, not hitches.
+
+144 Hz interpretation: the predicted 2/3-refresh alternation is not visible at
+the swap call, because the driver queues frames and the call returns at once.
+The panel still scans out at 144 Hz, so each 59.94 Hz frame must be shown for
+two or three refreshes; judder is expected unless variable refresh is used or
+the refresh is an exact multiple (120 Hz, not run). The tooling cannot observe
+scanout.
+
+Tooling limits found on hardware (not changed):
+
+- `render_thread_gpu_ms` reads about 16.7 ms p50 at every size, including
+  1920x1080, so the timer-query interval includes waiting for the swap chain.
+  It is not GPU cost, and hitches attributed to "GPU" are unreliable.
+- The exclusion around captures does not cover the frames after a large
+  present capture.
+- Opening movies are counted as hitches, and presentation statistics mix movie
+  and gameplay presents; they are not split by scene.
 
 ### Pending
 
-Owner measurements on the GTX 1080 Ti and Samsung 49-inch ultrawide (desktop
-3840x1080 at 144 Hz): `quick` or `full`, then `stutter`. V1 does not start
-until those findings are documented and reviewed.
+`full` (120/60 Hz modes, 7680x2160) was not run and is not required. V1 does
+not start until the owner reviews these findings.
