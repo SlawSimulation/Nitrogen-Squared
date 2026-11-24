@@ -144,7 +144,7 @@ prefers not to enable.
 | Video menu: seven rows at y 60-168, hint at 206, refresh row toggles both ways, all earlier rows, values and wraps | pass (tests/test_game_options.py) |
 | Real normal build with V2 (two jobs) | pass (compiled-game inputs `2b8b9bfe…`) |
 | Real game, software renderer: Video menu reached through the game's own options wheel shows all seven rows inside the footer | pass |
-| Exclusive refresh switching, smoothness, F1 report on a real 144 Hz panel | pending, owner's PC (this host has a 32 Hz remote display) |
+| Exclusive refresh switching, smoothness, F1 report on a real 144 Hz panel | pending, owner's PC (this host has a 32 Hz remote display); the owner's copy builds and starts at `35885323…` and the checks are deferred by the owner |
 
 Found while testing, not changed: with the software renderer the options
 file is not loaded, because loading follows the window update's OpenGL-only

@@ -32,6 +32,11 @@ Focused checks (check N2-DISPLAY-V2):
    F1 should say it uses 59.97 Hz and report 1.00 (even). Play the same
    part again and compare the smoothness by eye.
 5. Leave Fullscreen: the desktop returns to its usual 144 Hz.
+Status on 2026-11-24: the owner's test copy builds and starts V2 at inputs
+35885323…, after a repaired partial install. The four checks above are
+deferred by the owner and not yet done; V2 is not verified on hardware.
+V3 stage 1 (ultrawide investigation) found nothing to change; the owner's
+by-eye edge check at 21:9/32:9 and split two-player check are also deferred.
 
 **Display V1.2 — one set of display settings, and the game's Extras in F1
 (feature branch, still 0.2.2).** The game's own Video menu now has every
