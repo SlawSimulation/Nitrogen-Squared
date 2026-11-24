@@ -100,7 +100,8 @@ class SceneAndFrameTests(unittest.TestCase):
         self.assertAlmostEqual(gameplay["game_frame_rate"], report.GUEST_HZ, delta=0.5)
         # Every flip is one VBlank after the previous one (the first counts from the prior scene).
         self.assertEqual(gameplay["vblanks_between_flips"], {"1": gameplay["display_flips"]})
-        self.assertAlmostEqual(gameplay["render_thread_gpu_ms"]["p50"], 3.0)
+        self.assertAlmostEqual(gameplay["render_thread_gpu_span_ms"]["p50"], 3.0)
+        self.assertIn("swap", result["gpu_timer_note"])
         causes = {h["frame"]: h["attribution"] for h in result["hitches"]}
         self.assertTrue(causes[500].startswith("emulation CPU"))
         self.assertTrue(causes[600].startswith("waiting"))
@@ -113,8 +114,35 @@ class SceneAndFrameTests(unittest.TestCase):
             r["rth_gpu_frames"] = r["rth_gpu_ns"] = 0
         result = report.frame_analysis(rows, dict(busy_unit="thread_cycles", tsc_start=0, tsc_end=0))
         scene = result["scenes"]["boot-title-loading-and-menus"]
-        self.assertTrue(str(scene["render_thread_gpu_ms"]).startswith("unavailable"))
+        self.assertTrue(str(scene["render_thread_gpu_span_ms"]).startswith("unavailable"))
         self.assertTrue(str(scene["emulation_thread_busy_ms"]).startswith("unavailable"))
+
+    def test_gpu_timer_span_never_attributes_a_hitch_to_the_gpu(self):
+        # Long GPU span and an idle game thread: reported as waiting, not GPU.
+        self.assertTrue(report.attribute(40.0, 10.0, 2.0).startswith("waiting"))
+        self.assertTrue(report.attribute(40.0, 36.0, 2.0).startswith("emulation CPU"))
+        self.assertTrue(report.attribute(40.0, 25.0, 20.0).startswith("render-thread CPU"))
+        rows = frame_rows(300, slow={250: (60_000_000, 5_000_000)})
+        rows[250]["rth_gpu_ns"] += 50_000_000
+        result = report.frame_analysis(rows, dict(busy_unit="thread_cpu_ns"))
+        self.assertFalse(any("GPU (" in h["attribution"] for h in result["hitches"]))
+        self.assertIn("render_gpu_span_ms", result["hitches"][0])
+
+    def test_native_movie_and_present_capture_aftermath_are_not_hitches(self):
+        movie = {100: (8_000_000_000, 2_000_000_000)}          # 8 s inside one guest frame
+        rows = frame_rows(400, slow={**movie, 300: (66_000_000, 9_000_000)})
+        swaps = [dict(before_ns=0, after_ns=0, guest_frame=f, ok=1, instrumented=0) for f in range(400)]
+        swaps += [dict(before_ns=0, after_ns=0, guest_frame=99, ok=1, instrumented=0)] * 1000
+        swaps.append(dict(before_ns=0, after_ns=0, guest_frame=298, ok=1, instrumented=1))
+        swaps.sort(key=lambda s: s["guest_frame"])
+        result = report.frame_analysis(rows, dict(busy_unit="thread_cpu_ns"), swaps)
+        self.assertEqual(result["hitches"], [])
+        self.assertIn("native-movie", result["scenes"])
+        self.assertNotIn("wall_ms_per_guest_frame", result["scenes"]["native-movie"])
+        settled = sum(s["after_present_capture_excluded"] for s in result["scenes"].values())
+        self.assertEqual(settled, report.CAPTURE_SETTLE_FRAMES + 1)
+        # Without the swap log both still count, as before.
+        self.assertEqual(len(report.frame_analysis(rows, dict(busy_unit="thread_cpu_ns"))["hitches"]), 2)
 
     def test_windows_thread_cycles_use_the_measured_tsc_rate(self):
         self.assertEqual(report.busy_scale(dict(busy_unit="thread_cycles", start_ns=0, end_ns=2_000_000_000,
@@ -147,6 +175,25 @@ class PresentationTests(unittest.TestCase):
         self.assertEqual(result["hitches_over_25ms"], 0)
         self.assertNotIn("intervals_in_refresh_periods", result)
         self.assertFalse(report.presentation_analysis([], 60.0, 0)["available"])
+
+
+    def test_movie_presents_are_reported_apart_from_game_presents(self):
+        refresh = 144.0
+        movie_period, game_period = 1e9 / refresh, PERIOD_NS
+        swaps, t = [], 0.0
+        for i in range(300):                                     # 144 Hz movie inside guest frame 10
+            t += movie_period
+            swaps.append(dict(before_ns=int(t), after_ns=int(t), guest_frame=10, ok=1, instrumented=0))
+        for frame in range(11, 611):                             # evenly paced game frames
+            t += game_period
+            swaps.append(dict(before_ns=int(t), after_ns=int(t), guest_frame=frame, ok=1, instrumented=0))
+        scenes = {f: ("level-1-gameplay" if f >= 11 else "native-movie") for f in range(611)}
+        result = report.presentation_analysis(swaps, refresh, 1, scenes)
+        self.assertEqual(result["native_movie"]["intervals_in_refresh_periods"], {"1": 299})
+        self.assertEqual(set(result["intervals_in_refresh_periods"]), {"2"})
+        self.assertAlmostEqual(result["interval_ms"]["p50"], game_period / 1e6, places=2)
+        self.assertEqual(result["by_scene"]["level-1-gameplay"]["hitches_over_25ms"], 0)
+        self.assertEqual(result["repeated_guest_frame_presents"], 0)
 
 
 class MemoryTests(unittest.TestCase):

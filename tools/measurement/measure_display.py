@@ -352,8 +352,9 @@ def analyse_run(run: dict, run_dir: Path, code, seconds: float, keep_raw: bool) 
                     display_mode=display_mode, window_mode=actual.get("window_mode"),
                     ui_step=actual.get("ui_step"), world_raster=list(world),
                     scale=scale),
-        frames=report.frame_analysis(frames, timing) if frames else None,
-        presentation=report.presentation_analysis(swaps, refresh, timing.get("present_kind", 0)),
+        frames=report.frame_analysis(frames, timing, swaps) if frames else None,
+        presentation=report.presentation_analysis(swaps, refresh, timing.get("present_kind", 0),
+                                                  report.scene_map(frames, timing, swaps) if frames else None),
         memory=dict(nominal=report.nominal_memory(scale, world, (scale or {}).get("max_dim") or gl.get("max_texture_size")),
                     measured=report.measured_memory(fixture.get("memory_sample") or [])),
         captures=captures, gl=gl)
@@ -465,17 +466,24 @@ def summary(doc: dict) -> str:
     d = doc.get("tested_display") or {}
     lines += [f"Display: {d.get('name')} {d.get('bounds')} desktop {d.get('desktop')}", "",
               f"Golden determinism: {doc['golden_determinism']}", "",
-              "| Run | Status | Window | Display mode | 3D raster | Game fps (gameplay) | Present interval p50/p99 ms | Hitches |",
-              "| --- | --- | --- | --- | --- | --- | --- | --- |"]
+              "| Run | Status | Window | Display mode | 3D raster | Game fps (gameplay) | Game present interval p50/p99 ms | Hitches | Hitches by scene |",
+              "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     for r in doc["runs"]:
-        f = (r.get("frames") or {}).get("scenes", {}).get("level-1-gameplay", {})
+        frames = r.get("frames") or {}
+        f = frames.get("scenes", {}).get("level-1-gameplay", {})
         pres = r.get("presentation") or {}
         iv = pres.get("interval_ms") or {}
         mode = (r["actual"].get("display_mode") or {})
+        per_scene: dict[str, int] = {}
+        for h in frames.get("hitches") or []:
+            per_scene[h["scene"]] = per_scene.get(h["scene"], 0) + 1
+        breakdown = ", ".join(f"{k} {v}" for k, v in per_scene.items()) or "none"
         lines.append(f"| {r['id']} | {r['status']} | {r['actual'].get('window_pixels')} | "
                      f"{mode.get('w')}x{mode.get('h')}@{mode.get('refresh')} | {r['actual'].get('world_raster')} | "
                      f"{f.get('game_frame_rate')} | {iv.get('p50')}/{iv.get('p99')} | "
-                     f"{(r.get('frames') or {}).get('hitch_count')} |")
+                     f"{frames.get('hitch_count')} | {breakdown} |")
+    lines += ["", "Hitches are guest frames over 25 ms, excluding native-movie playback and the "
+              f"{report.CAPTURE_SETTLE_FRAMES} frames after each present capture. {report.GPU_SPAN_NOTE}"]
     return "\n".join(lines) + "\n"
 
 

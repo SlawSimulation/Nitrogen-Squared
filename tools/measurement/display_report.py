@@ -185,7 +185,39 @@ def label_scenes(rows: list[dict], anchor: int) -> list[str]:
     return labels
 
 
-def frame_analysis(rows: list[dict], timing: dict) -> dict:
+# Native movies play inside one guest frame while the host presents each movie
+# frame; that many presents with an unchanged guest frame marks movie playback.
+MOVIE_PRESENTS = 30
+# A present capture (glReadPixels of the back buffer) runs at a swap and its
+# cost lands in the next guest frames, after the frame row was flagged.
+CAPTURE_SETTLE_FRAMES = 3
+GPU_SPAN_NOTE = ("render_thread_gpu_span_ms is the framework's per-frame GL_TIME_ELAPSED query. Its bracket "
+                 "includes the frame's swap, so it contains swap-chain and presentation waiting and is not "
+                 "GPU render cost; hitches are therefore never attributed to the GPU from it.")
+
+
+def present_counts(swaps: list[dict]) -> dict[int, int]:
+    counts: dict[int, int] = {}
+    for s in swaps:
+        counts[s["guest_frame"]] = counts.get(s["guest_frame"], 0) + 1
+    return counts
+
+
+def movie_frames(swaps: list[dict]) -> set[int]:
+    """Guest frames during which the host presented a native movie."""
+    return {f for f, n in present_counts(swaps).items() if n >= MOVIE_PRESENTS}
+
+
+def capture_settle_frames(swaps: list[dict]) -> set[int]:
+    """Guest frames whose timing a present capture can still disturb."""
+    out: set[int] = set()
+    for s in swaps:
+        if s["instrumented"]:
+            out.update(range(s["guest_frame"], s["guest_frame"] + CAPTURE_SETTLE_FRAMES + 1))
+    return out
+
+
+def frame_analysis(rows: list[dict], timing: dict, swaps: list[dict] | None = None) -> dict:
     scale = busy_scale(timing)
     anchor = timing.get("measure_anchor") or 0
     per_scene: dict[str, dict] = {}
@@ -193,13 +225,18 @@ def frame_analysis(rows: list[dict], timing: dict) -> dict:
     last_origin = None
     last_flip_frame = None
     labels = label_scenes(rows, anchor)
+    movies = movie_frames(swaps or [])
+    settling = capture_settle_frames(swaps or [])
     for index, (prev, cur) in enumerate(zip(rows, rows[1:]), 1):
         frames = cur["frame"] - prev["frame"]
         if frames <= 0:
             continue
-        scene = labels[index]
+        # Swaps made while the guest was on frames prev..cur-1 fall in this interval.
+        in_movie = any(f in movies for f in range(prev["frame"], cur["frame"]))
+        scene = "native-movie" if in_movie else labels[index]
         s = per_scene.setdefault(scene, dict(frames=0, flips=0, wall=[], busy=[], rth_cpu=[], rth_gpu=[],
-                                             flip_gaps={}, instrumented=0, skipped_frames=0, span_ns=0))
+                                             flip_gaps={}, instrumented=0, settling=0, skipped_frames=0,
+                                             span_ns=0))
         s["frames"] += frames
         s["span_ns"] += cur["t_ns"] - prev["t_ns"]
         if frames > 1:
@@ -213,9 +250,14 @@ def frame_analysis(rows: list[dict], timing: dict) -> dict:
                 s["flip_gaps"][key] = s["flip_gaps"].get(key, 0) + 1
             last_flip_frame = cur["frame"]
         last_origin = origin
+        if in_movie:
+            continue                      # host movie playback, not guest frame time
         if cur["instrumented"] or prev["instrumented"]:
             s["instrumented"] += 1
             continue                      # a sample/capture synchronized the renderer
+        if cur["frame"] in settling:
+            s["settling"] += 1
+            continue                      # a present capture's cost is still landing
         wall = (cur["t_ns"] - prev["t_ns"]) / 1e6 / frames
         busy = (cur["busy"] - prev["busy"]) * scale / 1e6 / frames if scale else None
         s["wall"].append(wall)
@@ -234,13 +276,13 @@ def frame_analysis(rows: list[dict], timing: dict) -> dict:
                                 scene=scene, wall_ms=round(wall, 3),
                                 emulation_busy_ms=None if busy is None else round(busy, 3),
                                 render_cpu_ms=None if cpu is None else round(cpu, 3),
-                                render_gpu_ms=None if gpu is None else round(gpu, 3),
-                                attribution=attribute(wall, busy, cpu, gpu)))
+                                render_gpu_span_ms=None if gpu is None else round(gpu, 3),
+                                attribution=attribute(wall, busy, cpu)))
     scenes = {}
     any_gpu = any(s["rth_gpu"] for s in per_scene.values())
     for name, s in per_scene.items():
         seconds = s["span_ns"] / 1e9
-        scenes[name] = dict(
+        scene = dict(
             guest_frames=s["frames"], seconds=round(seconds, 3),
             guest_fps=round(s["frames"] / seconds, 3) if seconds else None,
             display_flips=s["flips"],
@@ -248,48 +290,81 @@ def frame_analysis(rows: list[dict], timing: dict) -> dict:
             vblanks_between_flips=s["flip_gaps"],
             fixture_skipped_poll_frames=s["skipped_frames"],
             instrumented_intervals_excluded=s["instrumented"],
-            wall_ms_per_guest_frame=percentiles(s["wall"]),
-            emulation_thread_busy_ms=percentiles(s["busy"]) if scale else "unavailable: no thread-time source",
-            render_thread_cpu_ms=percentiles(s["rth_cpu"]) or "unavailable: render worker off or not measuring",
-            render_thread_gpu_ms=percentiles(s["rth_gpu"]) or (
-                "unavailable: no GPU timer results (driver lacks timer queries, or the render worker is off)"
-                if not any_gpu else "no GPU samples in this scene"))
+            after_present_capture_excluded=s["settling"])
+        if name == "native-movie":
+            scene["note"] = (f"guest frames during which the host presented {MOVIE_PRESENTS}+ times (native movie "
+                             "playback); excluded from frame times and hitches")
+        else:
+            scene.update(
+                wall_ms_per_guest_frame=percentiles(s["wall"]),
+                emulation_thread_busy_ms=percentiles(s["busy"]) if scale else "unavailable: no thread-time source",
+                render_thread_cpu_ms=percentiles(s["rth_cpu"]) or "unavailable: render worker off or not measuring",
+                render_thread_gpu_span_ms=percentiles(s["rth_gpu"]) or (
+                    "unavailable: no GPU timer results (driver lacks timer queries, or the render worker is off)"
+                    if not any_gpu else "no GPU timer samples in this scene"))
+        scenes[name] = scene
     return dict(level_start_frame=anchor or None, scenes=scenes, hitches=hitches, hitch_count=len(hitches),
                 severe_hitches=sum(1 for h in hitches if h["wall_ms"] > SEVERE_MS),
                 busy_conversion=("thread CPU ns" if scale == 1.0 else
-                                 "thread cycles x TSC-calibrated ns/cycle (estimate)" if scale else "unavailable"))
+                                 "thread cycles x TSC-calibrated ns/cycle (estimate)" if scale else "unavailable"),
+                gpu_timer_note=GPU_SPAN_NOTE)
 
 
-def attribute(wall: float, busy, render_cpu, render_gpu) -> str:
-    """Name the likely cause of one long guest frame from what was measured."""
+def attribute(wall: float, busy, render_cpu) -> str:
+    """Name the likely cause of one long guest frame from what was measured.
+    The GPU timer span includes swap waits (GPU_SPAN_NOTE), so it is not used."""
     budget = GUEST_PERIOD_MS
     if busy is not None and busy >= 0.8 * wall:
         return "emulation CPU (the game thread was busy for most of the frame)"
-    if render_gpu is not None and render_gpu > budget:
-        return "GPU (render work exceeded a guest frame)"
     if render_cpu is not None and render_cpu > budget:
         return "render-thread CPU (command replay, uploads or first-use work)"
     if busy is not None and busy < 0.5 * wall:
-        return "waiting (the game thread was mostly idle: disc/file I/O, OS scheduling or pacing)"
+        return ("waiting (the game thread was mostly idle: GPU or swap-chain back-pressure, disc/file I/O, "
+                "OS scheduling or pacing; not separable here)")
     return "mixed or unattributed"
 
 
 # ---- presentation ----------------------------------------------------------
-def presentation_analysis(swaps: list[dict], refresh_hz: float | None, present_kind: int) -> dict:
+def refresh_multiples(intervals: list[float], refresh_hz: float) -> dict[str, int]:
+    period = 1000.0 / refresh_hz
+    multiples: dict[str, int] = {}
+    for i in intervals:
+        m = max(0, round(i / period))
+        key = str(m) if m <= 4 else "5+"
+        multiples[key] = multiples.get(key, 0) + 1
+    return multiples
+
+
+def presentation_analysis(swaps: list[dict], refresh_hz: float | None, present_kind: int,
+                          scene_of_frame: dict[int, str] | None = None) -> dict:
+    """Game presents (movie playback and present-capture aftermath excluded),
+    with movie presents and per-scene spacing reported separately."""
     if not swaps:
         return dict(available=False, reason="no presents recorded")
     kind = {1: "OpenGL swap", 2: "SDL renderer present (software renderer)"}.get(present_kind, "unknown")
-    intervals, repeats, blocking = [], 0, []
+    movies = movie_frames(swaps)
+    settling = capture_settle_frames(swaps)
+    intervals, repeats, blocking, movie_intervals, excluded = [], 0, [], [], 0
+    by_scene: dict[str, list[float]] = {}
     for prev, cur in zip(swaps, swaps[1:]):
-        if cur["instrumented"] or prev["instrumented"]:
+        interval = (cur["after_ns"] - prev["after_ns"]) / 1e6
+        if prev["guest_frame"] in movies and cur["guest_frame"] in movies:
+            movie_intervals.append(interval)
             continue
-        intervals.append((cur["after_ns"] - prev["after_ns"]) / 1e6)
+        if (cur["instrumented"] or prev["instrumented"] or prev["guest_frame"] in movies
+                or cur["guest_frame"] in movies or cur["guest_frame"] in settling):
+            excluded += 1
+            continue
+        intervals.append(interval)
         blocking.append((cur["after_ns"] - cur["before_ns"]) / 1e6)
         if cur["guest_frame"] == prev["guest_frame"]:
             repeats += 1
+        if scene_of_frame:
+            by_scene.setdefault(scene_of_frame.get(cur["guest_frame"], "unlabelled"), []).append(interval)
     span = (swaps[-1]["after_ns"] - swaps[0]["after_ns"]) / 1e9
     result = dict(available=True, present_path=kind, presents=len(swaps),
                   presents_per_second=round((len(swaps) - 1) / span, 3) if span > 0 else None,
+                  game_intervals=len(intervals), intervals_excluded=excluded,
                   interval_ms=percentiles(intervals, (1, 50, 95, 99)),
                   swap_call_ms=percentiles(blocking),
                   repeated_guest_frame_presents=repeats,
@@ -301,18 +376,32 @@ def presentation_analysis(swaps: list[dict], refresh_hz: float | None, present_k
         result["off_guest_period_over_2ms"] = round(
             sum(1 for i in intervals if abs(i - GUEST_PERIOD_MS) > 2.0) / len(intervals), 4)
     if refresh_hz and intervals:
-        period = 1000.0 / refresh_hz
-        multiples: dict[str, int] = {}
-        for i in intervals:
-            m = max(0, round(i / period))
-            key = str(m) if m <= 4 else "5+"
-            multiples[key] = multiples.get(key, 0) + 1
-        result.update(refresh_hz=refresh_hz, refresh_period_ms=round(period, 3),
-                      intervals_in_refresh_periods=multiples,
+        result.update(refresh_hz=refresh_hz, refresh_period_ms=round(1000.0 / refresh_hz, 3),
+                      intervals_in_refresh_periods=refresh_multiples(intervals, refresh_hz),
                       expected_refreshes_per_guest_frame=round(refresh_hz / GUEST_HZ, 3))
+    movie = dict(presents=sum(1 for s in swaps if s["guest_frame"] in movies),
+                 interval_ms=percentiles(movie_intervals, (1, 50, 99)))
+    if refresh_hz and movie_intervals:
+        movie["intervals_in_refresh_periods"] = refresh_multiples(movie_intervals, refresh_hz)
+    result["native_movie"] = movie
+    if by_scene:
+        result["by_scene"] = {name: dict(interval_ms=percentiles(values, (1, 50, 99)),
+                                         hitches_over_25ms=sum(1 for i in values if i > HITCH_MS),
+                                         **({"intervals_in_refresh_periods": refresh_multiples(values, refresh_hz)}
+                                            if refresh_hz else {}))
+                              for name, values in by_scene.items()}
     result["note"] = ("Times are when the swap call returned, not when the image was scanned out; "
-                      "compositor and driver queueing are not visible here.")
+                      "compositor and driver queueing are not visible here. Native-movie presents and the "
+                      f"{CAPTURE_SETTLE_FRAMES} guest frames after each present capture are excluded from the "
+                      "game figures.")
     return result
+
+
+def scene_map(rows: list[dict], timing: dict, swaps: list[dict] | None = None) -> dict[int, str]:
+    """Guest frame -> scene label, matching frame_analysis."""
+    labels = label_scenes(rows, timing.get("measure_anchor") or 0)
+    movies = movie_frames(swaps or [])
+    return {r["frame"]: ("native-movie" if r["frame"] in movies else label) for r, label in zip(rows, labels)}
 
 
 # ---- rendering memory -------------------------------------------------------

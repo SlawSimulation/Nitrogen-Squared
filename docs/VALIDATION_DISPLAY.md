@@ -194,15 +194,26 @@ two or three refreshes; judder is expected unless variable refresh is used or
 the refresh is an exact multiple (120 Hz, not run). The tooling cannot observe
 scanout.
 
-Tooling limits found on hardware (not changed):
+Tooling limits found on hardware, and how the analysis now handles them (the
+figures above come from the earlier analysis; the fixture and its recorded data
+are unchanged):
 
-- `render_thread_gpu_ms` reads about 16.7 ms p50 at every size, including
-  1920x1080, so the timer-query interval includes waiting for the swap chain.
-  It is not GPU cost, and hitches attributed to "GPU" are unreliable.
-- The exclusion around captures does not cover the frames after a large
-  present capture.
-- Opening movies are counted as hitches, and presentation statistics mix movie
-  and gameplay presents; they are not split by scene.
+- `render_thread_gpu_ms` read about 16.7 ms p50 at every size, including
+  1920x1080. The pinned renderer's GL_TIME_ELAPSED bracket contains the
+  frame's swap (its CPU figure subtracts the swap; the query cannot), so the
+  value includes swap-chain waiting. It is now reported as
+  `render_thread_gpu_span_ms` with that explanation, and no hitch is
+  attributed to the GPU; idle-thread hitches read "waiting (GPU or
+  swap-chain back-pressure, I/O, scheduling or pacing; not separable)".
+- The exclusion around captures did not cover the frames after a present
+  capture. The analysis now excludes the capture's guest frame and the three
+  after it from frame times, hitches and present spacing, and counts them.
+- Opening movies were counted as hitches and mixed into present spacing.
+  Guest frames with 30 or more host presents are now a `native-movie` scene,
+  excluded from frame times and hitches, with movie presents reported
+  separately; game present spacing is also given per scene. This detection is
+  checked with synthetic data only and is first confirmed on the next
+  OpenGL run.
 
 ### Pending
 
