@@ -68,7 +68,11 @@ extern "C" void func_override_call_original(CPUState*);
 #include <cassert>
 #include <cstring>
 #include <initializer_list>
+#include <string>
+#include <utility>
+#include <vector>
 static uint8_t ram[0x200000];
+static std::vector<std::pair<std::string,int>> texts; // every menu line drawn, with its y
 extern "C" {uint8_t *g_psx_ram=ram;}
 static FuncOverrideFn video,audio,title;
 static bool font_ready=false,caption=false;
@@ -94,6 +98,7 @@ extern "C" void func_override_guest_call(CPUState*c,uint32_t f,uint32_t){
   }
   ww(p+40,(1u<<24)|0xffffffu);ww(p+44,0xe100023c);c->gpr[2]=p+48;return;
  }
+ if(f==0x80062a28)texts.emplace_back(reinterpret_cast<const char*>(ram+(c->gpr[4]&0x1fffff)),int(rw(rw(c->gpr[29]+16))));
  uint32_t packet=f==0x80062a28?c->gpr[5]:c->gpr[4];
  c->gpr[2]=f==0x800280a0?60:packet+32;
  c->pc=0xdeadbeef;
@@ -167,6 +172,58 @@ int main(){
  c.gpr[4]=0x8011b160;c.gpr[5]=0x80160000;c.gpr[6]=0x80132000;c.gpr[7]=0;
  ww(0x8011b170,0x80);
  assert(audio(&c));assert(nitrogen_option_get(NITROGEN_MASTER_VOLUME)==95);
+ // V1.2: six Video rows (mode, HUD scale, HUD position, aspect, vsync,
+ // render resolution), navigated and changed in the game's own menu.
+ auto frame=[&](uint32_t buttons){
+  c.gpr[4]=0x8011b160;c.gpr[5]=0x80132000;c.gpr[6]=0x80160000;
+  ww(0x80090624,9);ww(0x80090628,9);ww(0x80090630,0);
+  ww(0x8011b170,buttons);ww(0x8011b174,0);texts.clear();assert(video(&c));
+ };
+ auto line=[&](const char*s){for(auto&t:texts)if(t.first==s)return t.second;return -1;};
+ ww(0x801f0004,0);
+ frame(0);
+ assert(line("video mode - windowed")==64 && line("HUD scale - AUTO")==84);
+ assert(line("HUD position - edges")==104 && line("aspect - auto")==124);
+ assert(line("vsync - on")==144 && line("render resolution - 100 percent")==164);
+ assert(line("to change")==204);
+ frame(0x40);frame(0x40);assert(rw(0x801f0004)==2);   // down to HUD position
+ frame(0x20);assert(nitrogen_option_get(NITROGEN_HUD_LAYOUT)==NITROGEN_HUD_CENTRED_16_9);
+ assert(line("HUD position - centred")==104);
+ frame(0x40);frame(0x20);frame(0x20);assert(nitrogen_option_get(NITROGEN_ASPECT)==NITROGEN_ASPECT_16_9);
+ assert(line("aspect - 16x9")==124);
+ frame(0x80);frame(0x80);frame(0x80);assert(nitrogen_option_get(NITROGEN_ASPECT)==NITROGEN_ASPECT_32_9); // wraps
+ frame(0x40);frame(0x20);assert(nitrogen_option_get(NITROGEN_VSYNC)==0 && line("vsync - off")==144);
+ frame(0x20);assert(nitrogen_option_get(NITROGEN_VSYNC)==1);
+ frame(0x40);assert(rw(0x801f0004)==5);
+ frame(0x20);assert(nitrogen_option_get(NITROGEN_RENDER_PERCENT)==105);   // slider row
+ frame(0x40);assert(rw(0x801f0004)==0);frame(0x10);assert(rw(0x801f0004)==5); // both wraps
+ // V1.2 game extras: F1 requests reach the game's own bytes only between
+ // frames, only with the verified code resident and every byte in range.
+ const uint32_t extra[]{0x8008ff7c,0x8011b4bf,0x8011b4be,0x8011b50d,0x8011b470};
+ int v[NITROGEN_EXTRA_COUNT];
+ for(uint32_t a:extra)wb(a,0);
+ nitrogen_extras_service();assert(nitrogen_extras_snapshot(v));
+ for(int i=0;i<NITROGEN_EXTRA_COUNT;++i)assert(v[i]==0);
+ wb(extra[0],2);nitrogen_extras_service();nitrogen_extras_snapshot(v);assert(v[0]==2); // game's own change shown
+ nitrogen_extras_request(NITROGEN_EXTRA_LENS_TYPE,2);
+ assert(rb(extra[1])==0);nitrogen_extras_snapshot(v);assert(v[1]==2); // queued, not yet written
+ nitrogen_extras_service();assert(rb(extra[1])==2);
+ nitrogen_extras_request(NITROGEN_EXTRA_CAMERA_ROLL,2);    // out of range: ignored
+ nitrogen_extras_request(NITROGEN_EXTRA_HATCHING,-1);
+ nitrogen_extras_request(NITROGEN_EXTRA_COUNT,0);
+ nitrogen_extras_service();assert(rb(extra[2])==0 && rb(extra[3])==0);
+ nitrogen_extras_request(NITROGEN_EXTRA_BONUS_WEAPONS,1);nitrogen_extras_service();assert(rb(extra[4])==1);
+ // Any byte outside its range: something else owns this memory. Nothing written.
+ wb(extra[3],7);nitrogen_extras_request(NITROGEN_EXTRA_BONUS_WEAPONS,0);
+ nitrogen_extras_service();assert(!nitrogen_extras_snapshot(v));assert(rb(extra[4])==1 && rb(extra[3])==7);
+ wb(extra[3],0);nitrogen_extras_service();assert(nitrogen_extras_snapshot(v));
+ assert(rb(extra[4])==1); // a request made while unavailable is dropped, not replayed
+ // Verified code not resident: unavailable and untouched.
+ ram[0x100]=1;nitrogen_extras_request(NITROGEN_EXTRA_LENS_FLARE,1);nitrogen_extras_service();
+ assert(!nitrogen_extras_snapshot(v));assert(rb(extra[0])==2);
+ ram[0x100]=0;ram[0x200]=1;nitrogen_extras_service();assert(!nitrogen_extras_snapshot(v));
+ ram[0x200]=0;nitrogen_extras_service();assert(nitrogen_extras_snapshot(v) && rb(extra[0])==2);
+ assert(texts.size()>0);
 }
 ''')
             subprocess.run(['c++','-std=c++17','-I',str(p),'-I',str(ROOT/'compat'),'-I',str(ROOT/'native'),

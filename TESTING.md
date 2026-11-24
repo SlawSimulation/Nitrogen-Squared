@@ -2,6 +2,34 @@
 
 ## Current acceptance and update checks
 
+**Display V1.2 — one set of display settings, and the game's Extras in F1
+(feature branch, still 0.2.2).** The game's own Video menu now has every
+display setting F1 has: video mode, HUD scale, HUD position, aspect, vsync and
+render resolution, in that order. F1 Settings now also has the game's Window
+mode, HUD scale and Render resolution. Both places change the same saved
+settings. F1 Settings also has a new Game extras section with the game's own
+Extras choices: lens flare, lens type, camera roll, hatching order and bonus
+weapons. The game owns these values. F1 changes them the same way the game's
+Extras menu does, and only the game's own memory-card set-up save keeps them;
+they are not stored in nitrogen-options.ini. The section is greyed out ("Not
+available right now") unless the verified game code is running and every
+value looks valid. Some changes may only take effect from the next level, as
+in the game's own menu. One more game rebuild; saves and settings are kept.
+
+Focused checks (check N2-DISPLAY-V12):
+1. In your test copy, install the V1.2 candidate and let the launcher rebuild
+   the game once.
+2. Open the game's Video menu (game options, then video): six rows. Change
+   HUD position, aspect and vsync there, then open F1 Settings: it shows the
+   same values. Change Window mode, HUD scale and Render resolution in F1,
+   then look at the Video menu again: it follows.
+3. In the main menu, change each Game extras value in F1, then open the
+   game's Extras menu: it shows the same choices.
+4. During level 1, change Lens type and Camera roll in F1. Note for each
+   whether it changed straight away or only from the next level.
+Optional: run --preset v1 --baseline again; the golden screenshots must stay
+identical to V0.
+
 **Display V1.1 — HUD position (feature branch, still 0.2.2).**
 A new HUD position setting, next to Aspect in F1 Settings and in the launcher's
 settings file: Edges (default, as before) or Centred (16:9). Centred keeps the
@@ -14,6 +42,10 @@ settings are kept.
 Focused checks (check N2-DISPLAY-HUD): with HUD position Edges, the V1 Auto
 golden screenshots stay identical to V0; with Centred at 32:9, the HUD sits in
 the middle 1920 pixels; switch both ways while playing.
+Result on 2026-11-24 (main PC): the `v1` preset on the V1.1 build (inputs
+694e84a8…) kept all 26 golden captures identical to V0, the Centred captures
+differ from Edges as expected, and switching HUD position both ways while
+playing and in menus was confirmed by eye. V1.1 is validated on that PC.
 
 **Display V1 — Aspect, VSync and 3D-size reporting (feature branch, still 0.2.2).**
 V1 adds two settings, in the launcher's Settings > Display and in F1 Settings
@@ -1120,9 +1152,24 @@ Instructions for future maintainers and assistants:
     "runtime": "Windows / Linux x64 \u00b7 USA disc",
     "cart": "",
     "createdAt": "2026-11-10",
-    "description": "Repairs future source mtimes behind the CMake loop, uses 80% desktop thread budgets and displays build stage/detail/workers/elapsed. Retains disc-derived game icon and interrupted-setup repairs. CI and owner verification pending. Corrects pre-1980 bundled-file ZIP metadata rejection; d83eedd source/UI and runtime checks passed before packaging failed. Adds multi-BIN (per-track) CUE import; player and CI verification pending. Adds V0 display measurement tooling (no runtime change). V1 adds Aspect and VSync settings and reports the actual 3D size (validated on the owner's PC). V1.1 adds a HUD position setting; owner verification pending."
+    "description": "Repairs future source mtimes behind the CMake loop, uses 80% desktop thread budgets and displays build stage/detail/workers/elapsed. Retains disc-derived game icon and interrupted-setup repairs. CI and owner verification pending. Corrects pre-1980 bundled-file ZIP metadata rejection; d83eedd source/UI and runtime checks passed before packaging failed. Adds multi-BIN (per-track) CUE import; player and CI verification pending. Adds V0 display measurement tooling (no runtime change). V1 adds Aspect and VSync settings and reports the actual 3D size (validated on the owner's PC). V1.1 adds a HUD position setting (validated on the owner's PC). V1.2 gives the game's Video menu and F1 Settings the same display options and adds the game's Extras to F1; owner verification pending."
   },
   "checks": [
+    {
+      "id": "N2-DISPLAY-V12",
+      "title": "Check matching display settings and Game extras in F1",
+      "area": "Display options (V1.2)",
+      "required": true,
+      "priority": "high",
+      "steps": [
+        "In your test copy, install the V1.2 candidate and let the launcher rebuild the game once. Preserve .local and your saves.",
+        "In the game's Video menu, change HUD position, aspect and vsync; open F1 Settings and check it shows the same values. Change Window mode, HUD scale and Render resolution in F1 and check the Video menu follows.",
+        "In the main menu, change each Game extras value in F1, then open the game's Extras menu and compare.",
+        "During level 1, change Lens type and Camera roll in F1; note whether each applies at once or from the next level."
+      ],
+      "expected": "Both menus show and change the same six display settings. The Game extras values in F1 always match the game's Extras menu, changes are never lost or garbled, and the section is greyed out only when the game is not ready. Nothing else in the game changes.",
+      "context": "Feature branch at 0.2.2; one more game rebuild. Game extras are saved only by the game's own set-up save. Coverage and game timing unchanged."
+    },
     {
       "id": "N2-DISPLAY-HUD",
       "title": "Check the HUD position setting at 32:9",

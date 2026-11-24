@@ -1,5 +1,67 @@
 # Display validation
 
+## V1.2 menu parity and game extras in F1 (feature branch, 0.2.2, unreleased) — 2026-11-24
+
+Requested by the owner after V1.1: the game's own Video menu and F1 Settings
+offer the same display settings, and the game's Extras menu can also be set
+from F1. This supersedes the V1 note that Aspect and VSync are "not in the
+game's own Video menu". VERSION stays 0.2.2; the compiled-game inputs change
+again (one rebuild, `17f52b05…`). Native selected code, coverage
+(38.4156% / 61.5844%), guest clocks and the framework checkout are unchanged.
+
+- Part A, game Video menu: six rows in this order: video mode (desktop only),
+  HUD scale, HUD position, aspect, vsync, render resolution (slider). Same
+  options and value steps as F1; labels use letters and digits only, because
+  the game font's punctuation is not assumed.
+- Part B, F1 Settings: adds Window mode (desktop only), HUD scale and Render
+  resolution (25-200% in 5% steps) next to the V1/V1.1 settings. Both menus
+  read and write the same nitrogen-options.ini values.
+- Part C, F1 Game extras: lens flare (diamond cut, damp, sharp), lens type
+  (normal, narrow, wide), camera roll (follow player, locked), hatching order
+  (preset, random), bonus weapons (fixed, selectable).
+
+### Part C investigation (this host, real game, private output)
+
+The guest RAM was snapshotted while the game's Extras menu changed each
+option. Each option is one byte, default 0, which changes only when that
+option changes and matches its label: 0x8008FF7C lens flare, 0x8011B4BF lens
+type, 0x8011B4BE camera roll, 0x8011B50D hatching order, 0x8011B470 bonus
+weapons. With all five set to non-default values, the bytes kept their values
+through the menus, level 1, bonus tally, level complete, next-level select
+and level-2 gameplay (every 1500 frames). The four routines already guarded by
+the Video, Audio and title bindings kept their verified hashes at every sample.
+Not sampled: high-score entry, game over, tutorial, two-player and attract
+demo; whether a mid-level change applies immediately is decided by the game.
+
+### Part C design
+
+- The game owns the values. F1 never stores them in nitrogen-options.ini; only
+  the game's own memory-card set-up save keeps them, as with its Extras menu.
+- F1 only queues a request (one atomic per option, validated against the
+  option's range). The game thread applies it in the per-frame window update,
+  between guest frames, with any renderer; never headless or in linked play.
+- A request is written only while the verified Video and Audio binding code is
+  resident (the same FNV identity the game menus use) and every one of the
+  five bytes holds a valid value. Otherwise the section reads "Not available
+  right now", is greyed out, and a request is dropped rather than replayed.
+- F1 shows the published game values, with a pending request shown at once.
+
+### Local validation (this host)
+
+| Check | Result |
+| --- | --- |
+| Video menu: six rows at their positions, navigation and wraps, HUD position, aspect (with wrap), vsync and render steps through the real menu callback | pass (tests/test_game_options.py) |
+| F1 and Video menu offer the same six options and set the shared keys | pass (tests/test_display_options.py) |
+| Extras service through the real code: queued until the next frame, written once, game-side changes shown, out-of-range requests ignored, any invalid byte makes it unavailable with nothing written, requests made while unavailable dropped, non-resident Video or Audio code makes it unavailable | pass (tests/test_game_options.py) |
+| Request queue: choices, validation, latest request wins and is shown, no service means dropped, unavailable never shows stale values; runtime wiring before the OpenGL-only early return, not headless or linked | pass (tests/test_display_options.py) |
+| Real normal build with V1.2 (two jobs) | pass (compiled-game inputs `17f52b05…`) |
+| Real game, software renderer, F1-equivalent requests from the measurement fixture: main-menu requests (lens type wide, bonus selectable) written within 100 frames; an invalid value ignored; the game's own Extras menu then showed wide and selectable; mid-level requests (camera roll locked, lens flare damp) written at the next frame; available and unchanged through level 1, bonus, level complete, next-level select, level 2 and high-score entry | pass |
+| First real-game run found the service skipped under the software renderer (it sat after the OpenGL-only early return); moved before it and rerun | fixed |
+| Whether a mid-level lens or camera change shows at once or from the next level; F1 appearance | pending, owner's PC |
+
+The measurement fixture's `extra_rel` and `ram_dump_rel` keys are maintenance
+aids for this check; their output stays in the private `.local` folder.
+
 ## V1.1 HUD position (feature branch, 0.2.2, unreleased) — 2026-11-24
 
 Requested by the owner after the V1 hardware checks: a setting, next to Aspect,
@@ -20,7 +82,7 @@ framework checkout are unchanged.
 | Persistence: default Edges, saved Centred, invalid value ignored; launcher read/save and range | pass |
 | Measurement preset `v1` adds a Centred run (`v1-hud-centred`) and records the HUD layout | pass (tests) |
 | Real normal build with V1.1 (two jobs) | pass (compiled-game inputs `694e84a8…`) |
-| Owner's PC: Edges still identical to V0, Centred HUD position by screenshot and by eye, live switching | pending |
+| Owner's PC (`v1` preset, inputs `694e84a8…`): Edges golden captures 26/26 identical to V0; Centred captures differ from Edges; live switching in menus and gameplay confirmed by eye | pass — V1.1 validated on the owner's PC |
 
 ## V1 owner hardware validation — 2026-11-24
 

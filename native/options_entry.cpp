@@ -17,6 +17,9 @@ namespace nitrogen::options {
 namespace {
 constexpr uint32_t page = 0x80090624, next_page = page+4, old_page = page+8, fade = page+12;
 constexpr uint32_t audio_selection = 0x80090b60;
+// The game's own Extras bytes (USA): lens flare, lens type, camera roll,
+// hatching order, bonus weapons. Order matches NITROGEN_EXTRA_*.
+constexpr uint32_t extras[NITROGEN_EXTRA_COUNT]{0x8008ff7c,0x8011b4bf,0x8011b4be,0x8011b50d,0x8011b470};
 uint32_t arena; // immutable address; every mutable cursor lives in guest memory
 bool resident(const Function &f)
 {
@@ -127,19 +130,19 @@ uint32_t slider(CPUState *c,uint32_t packet,uint32_t view,int y,int value,int ma
     c->write_word(view+0x7c,head);
     return packet;
 }
-uint32_t arrow_hint(CPUState *c,uint32_t packet,uint32_t view)
+uint32_t arrow_hint(CPUState *c,uint32_t packet,uint32_t view,int y=192)
 {
     const uint32_t buffer=arena+256;
     string(c,buffer,"to change");
     const int width=static_cast<int>(call(c,0x800280a0,buffer,0,0,0));
     const int left=(368-(36+width))/2;
-    packet=text(c,packet,view,"to change",192,left+36+width/2-184);
+    packet=text(c,packet,view,"to change",y,left+36+width/2-184);
     uint32_t head=c->read_word(view+0x78);
     // Original help-atlas left/right cells, from the player's imported art.
     for(int i=0;i<2;++i) {
         c->write_word(packet,(4u<<24)|(head&0xffffffu));
         c->write_word(packet+4,0x64808080u);
-        c->write_word(packet+8,static_cast<uint16_t>(left+i*18)|(192u<<16));
+        c->write_word(packet+8,static_cast<uint16_t>(left+i*18)|(static_cast<uint32_t>(y)<<16));
         c->write_word(packet+12,(0x5765u<<16)|(186u<<8)|(100u+i*14u));
         c->write_word(packet+16,(14u<<16)|14u);
         head=packet&0xffffffu; packet+=20;
@@ -255,21 +258,31 @@ int presentation(CPUState *c)
     c->write_half(context+0x3c2,9);
     const uint32_t edge=buttons&~c->read_word(context+0x14);
     const int first=nitrogen_options_desktop()?0:1;
-    int row=std::clamp(static_cast<int>(c->read_word(arena+4)),first,2);
+    // Video rows, top to bottom. Render resolution stays last, with its slider.
+    constexpr int keys[]{NITROGEN_VIDEO_MODE,NITROGEN_HUD_SCALE,NITROGEN_HUD_LAYOUT,
+                         NITROGEN_ASPECT,NITROGEN_VSYNC,NITROGEN_RENDER_PERCENT};
+    constexpr int last=5, top=64, spacing=20;
+    int row=std::clamp(static_cast<int>(c->read_word(arena+4)),first,last);
     bool changed=false;
     if (!opacity) {
-        if (edge&0x10) { row=row==first?2:row-1; sound(c); }
-        if (edge&0x40) { row=row==2?first:row+1; sound(c); }
-        const int direction=row==2?slider_direction(c,buttons,edge,arena+8):
+        if (edge&0x10) { row=row==first?last:row-1; sound(c); }
+        if (edge&0x40) { row=row==last?first:row+1; sound(c); }
+        const int direction=row==last?slider_direction(c,buttons,edge,arena+8):
             (edge&0x20)?1:(edge&0x80)?-1:0;
         if (direction) {
-            if (row==0) changed=nitrogen_option_set(row,(nitrogen_option_get(row)+direction+3)%3)!=0;
-            if (row==1) {
+            const int key=keys[row], value=nitrogen_option_get(key);
+            switch (key) {
+            case NITROGEN_VIDEO_MODE: changed=nitrogen_option_set(key,(value+direction+3)%3)!=0; break;
+            case NITROGEN_HUD_SCALE: {
                 constexpr int steps[]{0,2,3,4,6};
-                int index=0; while(index<4 && steps[index]!=nitrogen_option_get(row)) ++index;
-                changed=nitrogen_option_set(row,steps[(index+direction+5)%5])!=0;
+                int index=0; while(index<4 && steps[index]!=value) ++index;
+                changed=nitrogen_option_set(key,steps[(index+direction+5)%5])!=0;
+                break;
             }
-            if (row==2) changed=nitrogen_option_set(row,std::clamp(nitrogen_option_get(row)+direction*5,25,200))!=0;
+            case NITROGEN_HUD_LAYOUT: case NITROGEN_VSYNC: changed=nitrogen_option_set(key,!value)!=0; break;
+            case NITROGEN_ASPECT: changed=nitrogen_option_set(key,(value+direction+5)%5)!=0; break;
+            default: changed=nitrogen_option_set(key,std::clamp(value+direction*5,25,200))!=0; break;
+            }
             if(changed) sound(c);
         }
         if (edge&0x7000) { // Back or the original footer's Cross/Confirm action
@@ -282,17 +295,26 @@ int presentation(CPUState *c)
     char line[128];
     if (first==0) {
         constexpr const char *modes[]{"windowed","borderless fullscreen","fullscreen"};
-        std::snprintf(line,sizeof(line),"video mode - %s",modes[nitrogen_option_get(0)]);
-        packet=text(c,packet,view,line,88,0,row==0,opacity);
+        std::snprintf(line,sizeof(line),"video mode - %s",modes[nitrogen_option_get(NITROGEN_VIDEO_MODE)]);
+        packet=text(c,packet,view,line,top,0,row==0,opacity);
     }
-    const int scale=nitrogen_option_get(1);
+    const int scale=nitrogen_option_get(NITROGEN_HUD_SCALE);
     if(scale) std::snprintf(line,sizeof(line),"HUD scale - %dX",scale);
     else std::snprintf(line,sizeof(line),"HUD scale - AUTO");
-    packet=text(c,packet,view,line,118,0,row==1,opacity);
-    std::snprintf(line,sizeof(line),"render resolution - %d percent",nitrogen_option_get(2));
-    packet=text(c,packet,view,line,148,0,row==2,opacity);
-    packet=slider(c,packet,view,168,nitrogen_option_get(2),200,88);
-    packet=arrow_hint(c,packet,view);
+    packet=text(c,packet,view,line,top+spacing,0,row==1,opacity);
+    std::snprintf(line,sizeof(line),"HUD position - %s",
+                  nitrogen_option_get(NITROGEN_HUD_LAYOUT)==NITROGEN_HUD_CENTRED_16_9?"centred":"edges");
+    packet=text(c,packet,view,line,top+2*spacing,0,row==2,opacity);
+    // Letters and digits only: the game font's punctuation set is not assumed.
+    constexpr const char *aspects[]{"auto","4x3 original","16x9","21x9","32x9"};
+    std::snprintf(line,sizeof(line),"aspect - %s",aspects[std::clamp(nitrogen_option_get(NITROGEN_ASPECT),0,4)]);
+    packet=text(c,packet,view,line,top+3*spacing,0,row==3,opacity);
+    std::snprintf(line,sizeof(line),"vsync - %s",nitrogen_option_get(NITROGEN_VSYNC)?"on":"off");
+    packet=text(c,packet,view,line,top+4*spacing,0,row==4,opacity);
+    std::snprintf(line,sizeof(line),"render resolution - %d percent",nitrogen_option_get(NITROGEN_RENDER_PERCENT));
+    packet=text(c,packet,view,line,top+5*spacing,0,row==5,opacity);
+    packet=slider(c,packet,view,top+5*spacing+18,nitrogen_option_get(NITROGEN_RENDER_PERCENT),200,88);
+    packet=arrow_hint(c,packet,view,204);
     // The original menu ray field stays guest-timed behind our new controls.
     packet=call(c,0x80061ec0,packet,view+0x750,8,context,9);
     std::copy(registers.begin(),registers.end(),c->gpr); c->gpr[2]=packet;
@@ -360,9 +382,30 @@ int title(CPUState *c)
     std::copy(saved.begin(),saved.end(),c->gpr);c->gpr[2]=packet;c->pc=pc;
     return 1;
 }
+// Game thread, between guest frames. Reads and writes happen only while the
+// verified game code is resident and every Extras byte holds a valid value,
+// so a different occupant of that memory is never read as or written to.
+void extras_service()
+{
+    int values[NITROGEN_EXTRA_COUNT]{};
+    bool ok=g_psx_ram && resident(binding.presentation) && resident(binding.audio);
+    for (int i=0; ok && i<NITROGEN_EXTRA_COUNT; ++i) {
+        values[i]=g_psx_ram[extras[i]&0x1fffff];
+        ok=values[i]<nitrogen_extras_choices(i);
+    }
+    for (int i=0; i<NITROGEN_EXTRA_COUNT; ++i) {
+        const int want=nitrogen_extras_take(i); // dropped while unavailable
+        if (ok && want>=0 && want<nitrogen_extras_choices(i) && want!=values[i]) {
+            g_psx_ram[extras[i]&0x1fffff]=static_cast<uint8_t>(want);
+            values[i]=want;
+        }
+    }
+    nitrogen_extras_publish(ok,values);
+}
 struct Install {
     Install() {
         if(!binding.enabled) return;
+        nitrogen_extras_set_service(extras_service);
         const int a=func_override_add_guarded("n2o-game-options",binding.presentation.address,presentation,binding.presentation.guard,4,FO_CREDIT_SELF);
         const int b=func_override_add_guarded("n2o-audio-options",binding.audio.address,audio,binding.audio.guard,4,FO_CREDIT_SELF);
         const int d=func_override_add_guarded("n2o-title-close",binding.title.address,title,binding.title.guard,4,FO_CREDIT_SELF);

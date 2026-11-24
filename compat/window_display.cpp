@@ -233,3 +233,53 @@ extern "C" void nitrogen_window_ui_vertex(float *x, float *y, unsigned flags,
     *x=ox+(anchor+(*x-ox-ax*368.f)*step-viewport_x)*364.f/viewport_w;
     *y=oy+(std::floor(ay*dh)+(*y-oy-ay*240.f)*step)*source_h/dh;
 }
+// V1.2 game extras. Requests and the published snapshot are independent
+// atomics: the desktop menu never touches guest memory itself.
+namespace {
+constexpr int extra_choices[NITROGEN_EXTRA_COUNT]{3,3,2,2,2};
+std::atomic<int> extra_request[NITROGEN_EXTRA_COUNT]{{-1},{-1},{-1},{-1},{-1}};
+std::atomic<int> extra_value[NITROGEN_EXTRA_COUNT]{};
+std::atomic<int> extra_available{0};
+std::atomic<void (*)(void)> extra_service{nullptr};
+bool extra_valid(int extra,int value)
+{
+    return extra>=0 && extra<NITROGEN_EXTRA_COUNT && value>=0 && value<extra_choices[extra];
+}
+}
+extern "C" int nitrogen_extras_choices(int extra)
+{
+    return extra>=0 && extra<NITROGEN_EXTRA_COUNT ? extra_choices[extra] : 0;
+}
+extern "C" void nitrogen_extras_request(int extra,int value)
+{
+    if (extra_valid(extra,value)) extra_request[extra].store(value,std::memory_order_release);
+}
+extern "C" int nitrogen_extras_take(int extra)
+{
+    return extra>=0 && extra<NITROGEN_EXTRA_COUNT ? extra_request[extra].exchange(-1,std::memory_order_acq_rel) : -1;
+}
+extern "C" void nitrogen_extras_publish(int available,const int *values)
+{
+    for (int i=0;i<NITROGEN_EXTRA_COUNT;++i)
+        extra_value[i].store(available && extra_valid(i,values[i]) ? values[i] : 0,std::memory_order_relaxed);
+    extra_available.store(available?1:0,std::memory_order_release);
+}
+extern "C" int nitrogen_extras_snapshot(int *values)
+{
+    const int available=extra_available.load(std::memory_order_acquire);
+    for (int i=0;i<NITROGEN_EXTRA_COUNT;++i) {
+        const int pending=extra_request[i].load(std::memory_order_acquire);
+        values[i]=pending>=0 ? pending : extra_value[i].load(std::memory_order_relaxed);
+    }
+    return available;
+}
+extern "C" void nitrogen_extras_set_service(void (*service)(void)) { extra_service.store(service,std::memory_order_release); }
+extern "C" void nitrogen_extras_service(void)
+{
+    if (auto service=extra_service.load(std::memory_order_acquire)) service();
+    else {
+        int none[NITROGEN_EXTRA_COUNT]{};
+        for (int i=0;i<NITROGEN_EXTRA_COUNT;++i) (void)nitrogen_extras_take(i);
+        nitrogen_extras_publish(0,none);
+    }
+}

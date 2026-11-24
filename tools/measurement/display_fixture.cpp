@@ -47,6 +47,10 @@ extern "C" int nitrogen_menu_reserved_height(void);
 struct NitrogenWorldStatusV1 { int percent, requested_w, requested_h, actual_w, actual_h, reason, max_texture; };
 extern "C" void nitrogen_window_world_status(NitrogenWorldStatusV1 *) __attribute__((weak));
 extern "C" void nitrogen_window_report(int *, int *, int *, int *, int *, int *) __attribute__((weak));
+// V1.2 game extras (maintenance): queue the same request F1 makes, and record
+// what the game side published. Weak so older runtimes still link.
+extern "C" void nitrogen_extras_request(int, int) __attribute__((weak));
+extern "C" int nitrogen_extras_snapshot(int *) __attribute__((weak));
 extern "C" int nitrogen_option_get(int) __attribute__((weak));
 
 namespace {
@@ -104,6 +108,9 @@ struct Config {
     double refresh = 0;
     std::vector<Stage> stages;
     std::vector<uint64_t> captures, scale_samples, captures_rel, scale_rel;
+    std::vector<uint64_t> ram_dumps_rel;   // maintenance: guest RAM snapshots (private output)
+    struct ExtraRequest { uint64_t rel; int extra, value; };
+    std::vector<ExtraRequest> extras_rel;  // maintenance: F1 game-extras requests
 } cfg;
 bool load_config() {
     const char *path = std::getenv("NITROGEN_MEASURE_CONFIG");
@@ -131,6 +138,8 @@ bool load_config() {
         else if (key == "stop_rel") s >> cfg.stop_rel;
         else if (key == "capture") { uint64_t f = 0; s >> f; cfg.captures.push_back(f); }
         else if (key == "capture_rel") { uint64_t f = 0; s >> f; cfg.captures_rel.push_back(f); }
+        else if (key == "ram_dump_rel") { uint64_t f = 0; s >> f; cfg.ram_dumps_rel.push_back(f); }
+        else if (key == "extra_rel") { Config::ExtraRequest r{}; s >> r.rel >> r.extra >> r.value; cfg.extras_rel.push_back(r); }
         else if (key == "scale_sample") { uint64_t f = 0; s >> f; cfg.scale_samples.push_back(f); }
         else if (key == "scale_rel") { uint64_t f = 0; s >> f; cfg.scale_rel.push_back(f); }
         else if (key == "guest_capture") s >> cfg.guest_capture;
@@ -658,6 +667,25 @@ extern "C" bool __wrap_SDL_PollEvent(SDL_Event *event) {
         for (uint64_t s : cfg.scale_rel) sample |= s == rel;
         for (uint64_t c : cfg.captures) capture |= c == frame;
         for (uint64_t c : cfg.captures_rel) capture |= c == rel;
+        for (uint64_t d : cfg.ram_dumps_rel)
+            if (d == rel) {   // read-only copy of guest RAM into the private .local output
+                char name[64]; std::snprintf(name, sizeof name, "/ram-%llu.bin", (unsigned long long)rel);
+                if (FILE *f = std::fopen((cfg.out + name).c_str(), "wb")) {
+                    std::fwrite(g_psx_ram, 1, 0x200000, f); std::fclose(f);
+                }
+                if (nitrogen_extras_snapshot) {
+                    int v[5] = {};
+                    const int available = nitrogen_extras_snapshot(v);
+                    std::snprintf(name, sizeof name, "/extras-%llu.txt", (unsigned long long)rel);
+                    if (FILE *f = std::fopen((cfg.out + name).c_str(), "w")) {
+                        std::fprintf(f, "%d %d %d %d %d %d\n", available, v[0], v[1], v[2], v[3], v[4]);
+                        std::fclose(f);
+                    }
+                }
+                instrumented = 1;
+            }
+        for (const auto &r : cfg.extras_rel)
+            if (r.rel == rel && nitrogen_extras_request) nitrogen_extras_request(r.extra, r.value);
         if (sample) { scale_sample(); instrumented = 1; }
         if (capture) {
             const uint64_t name = cfg.captures_rel.empty() ? frame : rel;   // relative names compare across hosts

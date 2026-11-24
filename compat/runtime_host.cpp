@@ -34,6 +34,9 @@ static void nitrogen_window_update()
     if(nitrogen_window_take_close()) {
         SDL_Event event{};event.type=SDL_EVENT_QUIT;SDL_PushEvent(&event);
     }
+    // Game extras changed from F1: applied here, between guest frames, with
+    // any renderer. Never headless or while a linked session could diverge.
+    if (sdl_window && !g_headless && !psx_netplay_active()) nitrogen_extras_service();
     if (!g_gl_active || !sdl_window || g_headless) return;
     nitrogen_window_frame(s_frame_count);
     nitrogen_options_init(SDL_GetBasePath());

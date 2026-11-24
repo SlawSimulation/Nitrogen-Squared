@@ -244,5 +244,77 @@ class VsyncWiringTests(unittest.TestCase):
                       (ROOT / 'compat' / 'world_raster.inc').read_text(encoding='utf-8'))
 
 
+@unittest.skipUnless(COMPILER, 'C++ compiler required for display fixtures')
+class GameExtrasQueueTests(unittest.TestCase):
+    def test_requests_are_validated_queued_and_dropped_without_a_game_service(self):
+        run_fixture(self, r"""
+#include "window_display.h"
+#include <cassert>
+static int calls=0;
+static void service(){
+ ++calls;int v[NITROGEN_EXTRA_COUNT]={1,2,1,0,1};
+ for(int i=0;i<NITROGEN_EXTRA_COUNT;++i){int w=nitrogen_extras_take(i);if(w>=0)v[i]=w;}
+ nitrogen_extras_publish(1,v);
+}
+int main(){
+ const int choices[]={3,3,2,2,2};
+ for(int i=0;i<NITROGEN_EXTRA_COUNT;++i)assert(nitrogen_extras_choices(i)==choices[i]);
+ assert(nitrogen_extras_choices(-1)==0&&nitrogen_extras_choices(NITROGEN_EXTRA_COUNT)==0);
+ int v[NITROGEN_EXTRA_COUNT];
+ assert(!nitrogen_extras_snapshot(v));               // nothing published yet
+ // No verified game service registered: requests are dropped, never applied.
+ nitrogen_extras_request(NITROGEN_EXTRA_LENS_TYPE,1);nitrogen_extras_service();
+ assert(!nitrogen_extras_snapshot(v)&&nitrogen_extras_take(NITROGEN_EXTRA_LENS_TYPE)==-1);
+ nitrogen_extras_set_service(service);
+ nitrogen_extras_request(NITROGEN_EXTRA_LENS_FLARE,3);nitrogen_extras_request(NITROGEN_EXTRA_CAMERA_ROLL,-1);
+ assert(nitrogen_extras_take(NITROGEN_EXTRA_LENS_FLARE)==-1&&nitrogen_extras_take(NITROGEN_EXTRA_CAMERA_ROLL)==-1);
+ nitrogen_extras_service();assert(calls==1&&nitrogen_extras_snapshot(v)&&v[0]==1&&v[1]==2);
+ nitrogen_extras_request(NITROGEN_EXTRA_HATCHING,1);nitrogen_extras_request(NITROGEN_EXTRA_HATCHING,0);
+ nitrogen_extras_snapshot(v);assert(v[3]==0);         // latest request wins and is shown
+ nitrogen_extras_service();assert(nitrogen_extras_take(NITROGEN_EXTRA_HATCHING)==-1);
+ int bad[NITROGEN_EXTRA_COUNT]={9,9,9,9,9};nitrogen_extras_publish(0,bad);
+ assert(!nitrogen_extras_snapshot(v));for(int x:v)assert(x==0);  // never shows garbage
+}
+""", ['window_display.cpp'])
+
+    def test_runtime_serves_extras_between_frames_but_not_in_linked_play(self):
+        host = (ROOT / 'compat' / 'runtime_host.cpp').read_text(encoding='utf-8')
+        update = host[host.index('static void nitrogen_window_update()\n{'):]
+        update = update[:update.index('\n}\n')]
+        serve = update.index('if (sdl_window && !g_headless && !psx_netplay_active()) nitrogen_extras_service();')
+        self.assertLess(serve, update.index('if (!g_gl_active'))   # software renderer too
+        menu = (ROOT / 'compat' / 'desktop_menu.cpp').read_text(encoding='utf-8')
+        extras = menu[menu.index('void extras_settings()'):]
+        extras = extras[:extras.index('\n}\n')]
+        for label in ('Lens flare', 'Lens type', 'Camera roll', 'Hatching order', 'Bonus weapons'):
+            self.assertIn(f'"{label}"', extras)
+        self.assertIn('nitrogen_extras_request(', extras)
+        self.assertIn('BeginDisabled(!available)', extras)
+        self.assertNotIn('g_psx_ram', menu)   # the menu never touches guest memory
+
+
+class SettingsParityTests(unittest.TestCase):
+    """V1.2: the in-game Video menu and F1 Settings offer the same six options."""
+    LABELS = {'NITROGEN_VIDEO_MODE': 'Window mode', 'NITROGEN_HUD_SCALE': 'HUD scale',
+              'NITROGEN_RENDER_PERCENT': 'Render resolution', 'NITROGEN_HUD_LAYOUT': 'HUD position',
+              'NITROGEN_ASPECT': 'Aspect', 'NITROGEN_VSYNC': 'VSync'}
+
+    def test_f1_controls_set_the_shared_options(self):
+        menu = (ROOT / 'compat' / 'desktop_menu.cpp').read_text(encoding='utf-8')
+        for key, label in self.LABELS.items():
+            with self.subTest(key=key):
+                at = menu.index(f'"{label}"')
+                self.assertIn(f'nitrogen_option_set({key}', menu[at:at + 400])
+
+    def test_video_menu_rows_cover_the_same_options(self):
+        entry = (ROOT / 'native' / 'options_entry.cpp').read_text(encoding='utf-8')
+        rows = entry[entry.index('constexpr int keys[]{'):]
+        rows = rows[:rows.index('};')]
+        self.assertEqual([k.strip() for k in rows.split('{', 1)[1].split(',')],
+                         ['NITROGEN_VIDEO_MODE', 'NITROGEN_HUD_SCALE', 'NITROGEN_HUD_LAYOUT',
+                          'NITROGEN_ASPECT', 'NITROGEN_VSYNC', 'NITROGEN_RENDER_PERCENT'])
+        self.assertEqual(set(self.LABELS), {k.strip() for k in rows.split('{', 1)[1].split(',')})
+
+
 if __name__ == '__main__':
     unittest.main()

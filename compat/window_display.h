@@ -56,6 +56,20 @@ void nitrogen_window_report_window(int width, int height);
 void nitrogen_window_report_vsync(int value, int env_override);
 void nitrogen_window_report(int *window_w, int *window_h, int *area_w, int *area_h,
                             int *vsync, int *env_override);
+/* V1.2 game extras: one byte each, owned by the game's own Extras menu and
+ * saved only by the game's own memory-card set-up. The desktop menu only
+ * queues requests; the identity-guarded game side applies them between guest
+ * frames and publishes what the game currently holds. */
+enum { NITROGEN_EXTRA_LENS_FLARE, NITROGEN_EXTRA_LENS_TYPE, NITROGEN_EXTRA_CAMERA_ROLL,
+       NITROGEN_EXTRA_HATCHING, NITROGEN_EXTRA_BONUS_WEAPONS, NITROGEN_EXTRA_COUNT };
+int nitrogen_extras_choices(int extra);            /* valid values are 0..choices-1 */
+void nitrogen_extras_request(int extra, int value);/* any thread; invalid values ignored */
+int nitrogen_extras_take(int extra);               /* game side: pending value or -1 */
+void nitrogen_extras_publish(int available, const int *values);
+/* Fills NITROGEN_EXTRA_COUNT values (pending requests shown); returns availability. */
+int nitrogen_extras_snapshot(int *values);
+void nitrogen_extras_set_service(void (*service)(void));
+void nitrogen_extras_service(void);                /* game thread, between frames */
 #ifdef __cplusplus
 }
 #endif

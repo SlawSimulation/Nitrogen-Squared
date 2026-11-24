@@ -114,8 +114,9 @@ class LauncherPresentationTests(unittest.TestCase):
         self.assertEqual(events[-1],('done','Game disc verified. Ready to prepare.'))
 
     def test_build_candidate_has_the_reviewed_game_fingerprint(self):
-        # Display V1 (4dc2fa4b… -> eb7c7f58…) and V1.1 HUD position change compiled inputs: one rebuild each.
-        self.assertEqual(input_fingerprint(ROOT),'694e84a87ba3b27bcbdf00d1b38ce317a340b1813e082e632d2006e583961738')
+        # Display V1 (4dc2fa4b… -> eb7c7f58…), V1.1 HUD position (-> 694e84a8…) and V1.2 menu parity
+        # and game extras change compiled inputs: one rebuild each.
+        self.assertEqual(input_fingerprint(ROOT),'17f52b05ab753fe3c90b9d2a764629c5e76d7229fd62f7562ef54e4be12be39f')
 
     def test_original_artwork_separate_from_text_and_complete_package(self):
         assets=launcher_assets(ROOT);text=collect(ROOT)

@@ -62,6 +62,57 @@ const char *world_reason_text(int reason)
     default: return "full size";
     }
 }
+// The in-game Video menu's choices, sharing the same saved options.
+void video_settings()
+{
+    if (nitrogen_options_desktop()) {
+        static const char *modes[] = {"Windowed", "Borderless fullscreen", "Fullscreen"};
+        int mode = nitrogen_option_get(NITROGEN_VIDEO_MODE);
+        if (ImGui::Combo("Window mode", &mode, modes, IM_ARRAYSIZE(modes)))
+            nitrogen_option_set(NITROGEN_VIDEO_MODE, mode);
+    }
+    static const int steps[] = {0, 2, 3, 4, 6};
+    static const char *scales[] = {"Auto", "2x", "3x", "4x", "6x"};
+    int scale = 0;
+    while (scale < 4 && steps[scale] != nitrogen_option_get(NITROGEN_HUD_SCALE)) ++scale;
+    if (ImGui::Combo("HUD scale", &scale, scales, IM_ARRAYSIZE(scales)))
+        nitrogen_option_set(NITROGEN_HUD_SCALE, steps[scale]);
+    // 25-200% in the game menu's 5% steps.
+    int percent = nitrogen_option_get(NITROGEN_RENDER_PERCENT);
+    if (ImGui::SliderInt("Render resolution", &percent, 25, 200, "%d%%", ImGuiSliderFlags_AlwaysClamp))
+        nitrogen_option_set(NITROGEN_RENDER_PERCENT, std::clamp((percent + 2) / 5 * 5, 25, 200));
+}
+// The game's own Extras menu choices. The game owns these values: F1 queues
+// a change that the game thread applies between frames, and only the game's
+// own memory-card set-up save keeps it. Unavailable values are never guessed.
+void extras_settings()
+{
+    static const char *flare[] = {"Diamond cut", "Damp", "Sharp"};
+    static const char *lens[] = {"Normal", "Narrow", "Wide"};
+    static const char *roll[] = {"Follow player", "Locked"};
+    static const char *hatching[] = {"Preset", "Random"};
+    static const char *bonus[] = {"Fixed", "Selectable"};
+    struct Row { const char *label, **names; int extra; };
+    static const Row rows[] = {
+        {"Lens flare", flare, NITROGEN_EXTRA_LENS_FLARE},
+        {"Lens type", lens, NITROGEN_EXTRA_LENS_TYPE},
+        {"Camera roll", roll, NITROGEN_EXTRA_CAMERA_ROLL},
+        {"Hatching order", hatching, NITROGEN_EXTRA_HATCHING},
+        {"Bonus weapons", bonus, NITROGEN_EXTRA_BONUS_WEAPONS},
+    };
+    int values[NITROGEN_EXTRA_COUNT] = {};
+    const bool available = nitrogen_extras_snapshot(values) != 0;
+    if (!available) ImGui::TextDisabled("Not available right now.");
+    ImGui::BeginDisabled(!available);
+    for (const Row &row : rows) {
+        int value = values[row.extra];
+        if (ImGui::Combo(row.label, &value, row.names, nitrogen_extras_choices(row.extra)))
+            nitrogen_extras_request(row.extra, value);
+    }
+    ImGui::EndDisabled();
+    ImGui::TextWrapped("Some changes may take effect from the next level, as in the game's own menu. "
+                       "Save your set-up in the game to keep them.");
+}
 // Display settings and what the renderer actually produced. Values that
 // cannot be read are shown as unavailable, never guessed.
 void display_settings(DesktopMenu &m)
@@ -331,13 +382,17 @@ void draw(void *context, int, int)
     if (m.settings) {
         ImGui::SetNextWindowSize(ImVec2(390, 0), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("Settings", &m.settings, ImGuiWindowFlags_AlwaysAutoResize)) {
+#ifdef NITROGEN_WINDOW_DISPLAY
+            ImGui::SeparatorText("Display");
+            video_settings();
+            display_settings(m);
+            ImGui::SeparatorText("Game extras");
+            extras_settings();
+#else
             PsxHostVideoSettings v{};
             m.host->video_get(&v);
             bool full = v.fullscreen != 0;
             if (ImGui::Checkbox("Fullscreen", &full)) fullscreen(m);
-#ifdef NITROGEN_WINDOW_DISPLAY
-            ImGui::SeparatorText("Display");
-            display_settings(m);
 #endif
             ImGui::SeparatorText("Menu");
             changed |= ImGui::Checkbox("Show menu bar (F1)", &m.visible);
