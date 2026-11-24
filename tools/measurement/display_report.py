@@ -570,6 +570,9 @@ def plan_runs(display: dict, preset: str) -> list[dict]:
             runs.append(dict(id=f"v1-aspect-{label}", kind="borderless (V1 Aspect setting)", width=dw, height=dh,
                              aspect=label, aspect_option=option, render_percent=100, vsync=1, vsync_via="option",
                              route="default", video_mode=1, mode="none", captures=MATRIX_CAPTURES))
+        runs.append(dict(id="v1-hud-centred", kind="borderless (V1.1 HUD position centred)", width=dw, height=dh,
+                         aspect="auto", aspect_option=0, hud_layout=1, render_percent=100, vsync=1,
+                         vsync_via="option", route="default", video_mode=1, mode="none", captures=MATRIX_CAPTURES))
         runs.append(dict(id="v1-vsync-off", kind="borderless (V1 VSync setting off)", width=dw, height=dh,
                          aspect="auto", aspect_option=0, render_percent=100, vsync=0, vsync_via="option",
                          route="default", video_mode=1, mode="none", captures=MATRIX_CAPTURES))

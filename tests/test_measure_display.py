@@ -295,6 +295,7 @@ class PlanTests(unittest.TestCase):
             run = runs[f"v1-aspect-{label}"]
             self.assertEqual((run["aspect_option"], run["vsync_via"], run["video_mode"]), (option, "option", 1))
         self.assertEqual((runs["v1-vsync-off"]["vsync"], runs["v1-vsync-off"]["vsync_via"]), (0, "option"))
+        self.assertEqual((runs["v1-hud-centred"]["hud_layout"], runs["v1-hud-centred"]["aspect_option"]), (1, 0))
         clamp = runs["v1-clamp-7680x2160-200pct"]
         self.assertEqual((clamp["width"], clamp["render_percent"], clamp["kind"]), (7680, 200, "windowed-oversized"))
 
@@ -314,7 +315,7 @@ class PlanTests(unittest.TestCase):
             try:
                 with unittest.mock.patch.dict(measure.os.environ, PSX_VSYNC="1"):
                     # A V1 run uses the player's setting: the developer override is removed.
-                    for run, expect in ((dict(id="a", aspect_option=3, vsync=0, vsync_via="option"), None),
+                    for run, expect in ((dict(id="a", aspect_option=3, vsync=0, vsync_via="option", hud_layout=1), None),
                                         (dict(id="b", vsync=0), "0")):
                         measure.run_once(Path(tmp) / "missing.exe", info, dict(run, kind="test", route="default", mode="none"),
                                          out, None, 1, False, False)
@@ -322,6 +323,7 @@ class PlanTests(unittest.TestCase):
                         options = (out / "runs" / run["id"] / "nitrogen-options.ini").read_text()
                         self.assertIn(f"aspect {run.get('aspect_option', 0)}\n", options)
                         self.assertIn(f"vsync {run['vsync']}\n", options)
+                        self.assertIn(f"hud_layout {run.get('hud_layout', 0)}\n", options)
             finally:
                 measure.subprocess.run = original
 

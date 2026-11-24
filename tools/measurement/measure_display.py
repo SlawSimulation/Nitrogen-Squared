@@ -286,7 +286,8 @@ def run_once(exe: Path, info: dict, run: dict, out: Path, display_index: int | N
     config = write_config(run, run_dir, display_index)
     (run_dir / "nitrogen-options.ini").write_text(
         f"video_mode {run.get('video_mode', 0)}\nhud_scale 0\nrender_percent {run.get('render_percent', 100)}\n"
-        f"master_volume {100 if audible else 0}\naspect {run.get('aspect_option', 0)}\nvsync {run.get('vsync', 1)}\n",
+        f"master_volume {100 if audible else 0}\naspect {run.get('aspect_option', 0)}\nvsync {run.get('vsync', 1)}\n"
+        f"hud_layout {run.get('hud_layout', 0)}\n",
         encoding="utf-8")
     from run_runtime import runtime_environment
     env = runtime_environment(info["work"], render_worker=None)
@@ -352,7 +353,7 @@ def analyse_run(run: dict, run_dir: Path, code, seconds: float, keep_raw: bool) 
     return dict(
         id=run["id"], kind=run["kind"], status=status, reason=reason, seconds=seconds,
         requested={k: run.get(k) for k in ("width", "height", "refresh", "aspect", "render_percent", "vsync",
-                                          "video_mode", "route", "aspect_option", "vsync_via")},
+                                          "video_mode", "route", "aspect_option", "vsync_via", "hud_layout")},
         actual=dict(window_pixels=pixels, game_area=[pixels[0], pixels[1] - reserved] if pixels else None,
                     menu_bar_reserved=reserved, fullscreen=actual.get("fullscreen"),
                     display_mode=display_mode, window_mode=actual.get("window_mode"),
@@ -496,12 +497,13 @@ def summary(doc: dict) -> str:
                      f"{frames.get('hitch_count')} | {breakdown} |")
     v1 = [r for r in doc["runs"] if (r.get("actual") or {}).get("display_status")]
     if v1:
-        lines += ["", "| Run | Aspect option | Window | Game area | VSync option/effective | 3D requested | 3D actual | 3D limit |",
-                  "| --- | --- | --- | --- | --- | --- | --- | --- |"]
+        lines += ["", "| Run | Aspect option | HUD layout | Window | Game area | VSync option/effective | 3D requested | 3D actual | 3D limit |",
+                  "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
         reasons = {0: "full size", 1: "texture limit", 2: "allocation refused", 3: "not used"}
         for r in v1:
             s = r["actual"]["display_status"]
-            lines.append(f"| {r['id']} | {s.get('aspect_option')} | {s.get('window')} | {s.get('game_area')} | "
+            lines.append(f"| {r['id']} | {s.get('aspect_option')} | {s.get('hud_layout_option')} | {s.get('window')} | "
+                         f"{s.get('game_area')} | "
                          f"{s.get('vsync_option')}/{s.get('vsync_effective')}"
                          f"{' (PSX_VSYNC)' if s.get('vsync_env_override') else ''} | "
                          f"{s.get('world_percent')}% {s.get('world_requested')} | {s.get('world_actual')} | "

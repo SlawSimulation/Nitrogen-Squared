@@ -7,6 +7,7 @@ namespace {
 // One atomic pair: a render worker never sees half of a resize.
 std::atomic<unsigned long long> drawable{0};
 std::atomic<int> ui_scale{0};
+std::atomic<int> hud_layout{0};
 std::atomic<unsigned long long> world_size{0};
 std::atomic<int> world_texture_limit{0};
 std::atomic<unsigned long long> world_refused{0};      // smallest refused w<<32|h
@@ -91,6 +92,19 @@ static void fit_within(unsigned &w,unsigned &h,unsigned lw,unsigned lh)
         w=static_cast<unsigned>(static_cast<unsigned long long>(w)*lh/h); h=lh;
     }
     w=std::max(1u,w); h=std::max(1u,h);
+}
+extern "C" void nitrogen_window_hud_layout(int layout)
+{
+    if (layout == NITROGEN_HUD_EDGES || layout == NITROGEN_HUD_CENTRED_16_9)
+        hud_layout.store(layout, std::memory_order_release);
+}
+extern "C" void nitrogen_window_hud_span(int width,int height,int *x,int *span_w)
+{
+    *x = 0; *span_w = width;
+    if (hud_layout.load(std::memory_order_acquire) != NITROGEN_HUD_CENTRED_16_9 || width<1 || height<1) return;
+    const int region = static_cast<int>(static_cast<long long>(height)*16/9);
+    if (region >= width) return;        // 16:9 or narrower: identical to EDGES
+    *span_w = region; *x = (width-region)/2;
 }
 extern "C" void nitrogen_window_world_raster(int width,int height,int sw,int sh,int percent)
 {
@@ -208,9 +222,14 @@ extern "C" void nitrogen_window_ui_vertex(float *x, float *y, unsigned flags,
     const float ay=(role==1 || role==2) ? 0.f : (role==3 || role==4 || role==5) ? 1.f : .5f;
     const int step=nitrogen_window_ui_step(dw,dh);
     const int viewport_w=static_cast<long long>(dw)*3<static_cast<long long>(dh)*4 ? dh*4/3 : dw;
+    // Edge anchors follow the HUD span; centre anchors keep floor(dw/2) so
+    // centred phrases and menus are identical in both layouts.
+    int span_x=0, span_w=dw;
+    nitrogen_window_hud_span(dw,dh,&span_x,&span_w);
+    const float anchor=ax==.5f ? std::floor(ax*dw) : span_x+std::floor(ax*span_w);
     // Map square-pixel UI through the actual present/crop, independently from
     // world projection. All parts of a role use the authored 368x240 pivot.
     const int viewport_x=(dw-viewport_w)/2;
-    *x=ox+(std::floor(ax*dw)+(*x-ox-ax*368.f)*step-viewport_x)*364.f/viewport_w;
+    *x=ox+(anchor+(*x-ox-ax*368.f)*step-viewport_x)*364.f/viewport_w;
     *y=oy+(std::floor(ay*dh)+(*y-oy-ay*240.f)*step)*source_h/dh;
 }

@@ -8,7 +8,9 @@ from portable_update import api_json, version_tuple
 from portable_support import REPOSITORY
 
 # aspect: 0 Auto (fill the window), 1 Original 4:3, 2 16:9, 3 21:9, 4 32:9. vsync: 1 On, 0 Off.
-DEFAULT_OPTIONS = dict(video_mode=0, hud_scale=0, render_percent=100, master_volume=100, aspect=0, vsync=1)
+# hud_layout: 0 edges of the game area, 1 centred 16:9 region.
+DEFAULT_OPTIONS = dict(video_mode=0, hud_scale=0, render_percent=100, master_volume=100, aspect=0, vsync=1,
+                       hud_layout=0)
 KEYBOARD = [("Move / navigate", "W A S D"), ("Select / main weapon", "Enter"),
             ("Back / shield", "Backspace"), ("Secondary weapon", "Right Shift"),
             ("Switch secondary", "W"), ("Firewall", "E"), ("Brake", "S"),
@@ -23,7 +25,8 @@ def valid_option(name, value):
             or name == "render_percent" and 25 <= value <= 200 and value % 5 == 0
             or name == "master_volume" and 0 <= value <= 100
             or name == "aspect" and value in (0,1,2,3,4)
-            or name == "vsync" and value in (0,1))
+            or name == "vsync" and value in (0,1)
+            or name == "hud_layout" and value in (0,1))
 
 
 def read_options(local: Path):

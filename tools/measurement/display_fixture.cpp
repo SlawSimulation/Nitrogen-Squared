@@ -414,13 +414,14 @@ void scale_sample() {
         int ww = 0, wh = 0, aw = 0, ah = 0, vsync = 0, env = 0;
         nitrogen_window_report(&ww, &wh, &aw, &ah, &vsync, &env);
         char v[600];
-        // Option indices: 4 = aspect, 5 = vsync (compat/nitrogen_options.h).
+        // Option indices: 4 = aspect, 5 = vsync, 6 = hud_layout (compat/nitrogen_options.h).
         std::snprintf(v, sizeof v,
-            "{\"frame\":%llu,\"aspect_option\":%d,\"vsync_option\":%d,\"vsync_effective\":%d,"
+            "{\"frame\":%llu,\"aspect_option\":%d,\"hud_layout_option\":%d,\"vsync_option\":%d,\"vsync_effective\":%d,"
             "\"vsync_env_override\":%d,\"window\":[%d,%d],\"game_area\":[%d,%d],"
             "\"world_percent\":%d,\"world_requested\":[%d,%d],\"world_actual\":[%d,%d],"
             "\"world_reason\":%d,\"max_texture\":%d}",
-            (unsigned long long)s_frame_count, nitrogen_option_get(4), nitrogen_option_get(5), vsync, env,
+            (unsigned long long)s_frame_count, nitrogen_option_get(4), nitrogen_option_get(6), nitrogen_option_get(5),
+            vsync, env,
             ww, wh, aw, ah, w.percent, w.requested_w, w.requested_h, w.actual_w, w.actual_h, w.reason,
             w.max_texture);
         info("display_status", v);

@@ -70,6 +70,10 @@ void display_settings(DesktopMenu &m)
     int aspect = nitrogen_option_get(NITROGEN_ASPECT);
     if (ImGui::Combo("Aspect", &aspect, aspects, IM_ARRAYSIZE(aspects)))
         nitrogen_option_set(NITROGEN_ASPECT, aspect);
+    static const char *hud_layouts[] = {"Edges of the game area", "Centred (16:9)"};
+    int hud = nitrogen_option_get(NITROGEN_HUD_LAYOUT);
+    if (ImGui::Combo("HUD position", &hud, hud_layouts, IM_ARRAYSIZE(hud_layouts)))
+        nitrogen_option_set(NITROGEN_HUD_LAYOUT, hud);
     bool vsync = nitrogen_option_get(NITROGEN_VSYNC) != 0;
     if (ImGui::Checkbox("VSync", &vsync)) nitrogen_option_set(NITROGEN_VSYNC, vsync ? 1 : 0);
 

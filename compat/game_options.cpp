@@ -13,8 +13,8 @@
 
 namespace {
 // Defaults keep the original presentation: AUTO aspect fills the window, VSync on.
-std::array<std::atomic<int>, NITROGEN_OPTION_COUNT> values{{NITROGEN_WINDOWED, 0, 100, 100, NITROGEN_ASPECT_AUTO, 1}};
-constexpr const char *names[]{"video_mode", "hud_scale", "render_percent", "master_volume", "aspect", "vsync"};
+std::array<std::atomic<int>, NITROGEN_OPTION_COUNT> values{{NITROGEN_WINDOWED, 0, 100, 100, NITROGEN_ASPECT_AUTO, 1, NITROGEN_HUD_EDGES}};
+constexpr const char *names[]{"video_mode", "hud_scale", "render_percent", "master_volume", "aspect", "vsync", "hud_layout"};
 static_assert(sizeof(names) / sizeof(names[0]) == NITROGEN_OPTION_COUNT, "one name per option");
 std::mutex preferences_mutex;
 std::string preferences_path;
@@ -35,6 +35,7 @@ bool valid(int key, int value)
     case NITROGEN_MASTER_VOLUME: return value >= 0 && value <= 100;
     case NITROGEN_ASPECT: return value >= NITROGEN_ASPECT_AUTO && value <= NITROGEN_ASPECT_32_9;
     case NITROGEN_VSYNC: return value == 0 || value == 1;
+    case NITROGEN_HUD_LAYOUT: return value == NITROGEN_HUD_EDGES || value == NITROGEN_HUD_CENTRED_16_9;
     default: return false;
     }
 }

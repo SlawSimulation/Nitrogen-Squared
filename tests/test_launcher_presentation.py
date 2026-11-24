@@ -30,17 +30,17 @@ class LauncherPresentationTests(unittest.TestCase):
         path=self.root/'nitrogen-options.ini'
         content='video_mode 2\nhud_scale 1\nrender_percent 70\nmaster_volume 50 trailing\nfuture 8\n'
         path.write_text(content)
-        self.assertEqual(read_options(self.root),dict(video_mode=2,hud_scale=0,render_percent=70,master_volume=100,aspect=0,vsync=1))
+        self.assertEqual(read_options(self.root),dict(video_mode=2,hud_scale=0,render_percent=70,master_volume=100,aspect=0,vsync=1,hud_layout=0))
         self.assertEqual(path.read_text(),content)
 
     def test_preferences_preserve_other_settings_comments_and_unknown_fields(self):
         path=self.root/'nitrogen-options.ini';path.write_text('video_mode 1\nmaster_volume 26\n# keep me\nfuture 8\n')
         save_option(self.root,'hud_scale',3)
-        self.assertEqual(read_options(self.root),dict(video_mode=1,hud_scale=3,render_percent=100,master_volume=26,aspect=0,vsync=1))
+        self.assertEqual(read_options(self.root),dict(video_mode=1,hud_scale=3,render_percent=100,master_volume=26,aspect=0,vsync=1,hud_layout=0))
         self.assertIn('# keep me\nfuture 8\n',path.read_text())
         before=path.stat().st_mtime_ns;save_option(self.root,'hud_scale',3)
         self.assertEqual(path.stat().st_mtime_ns,before)
-        for key,value in [('hud_scale',1),('video_mode',3),('render_percent',99),('master_volume',101),('master_volume',True),('master_volume','10'),('aspect',5),('aspect',-1),('vsync',2),('vsync',-1)]:
+        for key,value in [('hud_scale',1),('video_mode',3),('render_percent',99),('master_volume',101),('master_volume',True),('master_volume','10'),('aspect',5),('aspect',-1),('vsync',2),('vsync',-1),('hud_layout',2),('hud_layout',-1)]:
             with self.subTest(key=key,value=value),self.assertRaises(ValueError):save_option(self.root,key,value)
 
     def test_aspect_and_vsync_defaults_persist_and_older_files_keep_auto_and_on(self):
@@ -49,7 +49,7 @@ class LauncherPresentationTests(unittest.TestCase):
         path.write_text('video_mode 0\nhud_scale 0\nrender_percent 100\nmaster_volume 80\n')
         self.assertEqual(read_options(self.root)['aspect'],0);self.assertEqual(read_options(self.root)['vsync'],1)
         save_option(self.root,'aspect',3);save_option(self.root,'vsync',0)
-        self.assertEqual(read_options(self.root),dict(video_mode=0,hud_scale=0,render_percent=100,master_volume=80,aspect=3,vsync=0))
+        self.assertEqual(read_options(self.root),dict(video_mode=0,hud_scale=0,render_percent=100,master_volume=80,aspect=3,vsync=0,hud_layout=0))
         lines=path.read_text().splitlines()
         self.assertIn('aspect 3',lines);self.assertIn('vsync 0',lines)
         self.assertEqual(sum(1 for l in lines if l.startswith('aspect ')),1)
@@ -66,7 +66,7 @@ class LauncherPresentationTests(unittest.TestCase):
         self.assertEqual(tmp.read_text(),'interrupted');self.assertFalse(path.exists())
 
     def test_native_option_ranges(self):
-        for key,values in [('video_mode',range(3)),('hud_scale',[0,2,3,4,6]),('render_percent',range(25,201,5)),('master_volume',range(101)),('aspect',range(5)),('vsync',(0,1))]:
+        for key,values in [('video_mode',range(3)),('hud_scale',[0,2,3,4,6]),('render_percent',range(25,201,5)),('master_volume',range(101)),('aspect',range(5)),('vsync',(0,1)),('hud_layout',(0,1))]:
             self.assertTrue(all(valid_option(key,v) for v in values))
         self.assertFalse(valid_option('other',0));self.assertFalse(valid_option('master_volume',-1))
 
@@ -114,8 +114,8 @@ class LauncherPresentationTests(unittest.TestCase):
         self.assertEqual(events[-1],('done','Game disc verified. Ready to prepare.'))
 
     def test_build_candidate_has_the_reviewed_game_fingerprint(self):
-        # Display V1 (Aspect/VSync/3D-size reporting) changes compiled inputs: one rebuild from 4dc2fa4b….
-        self.assertEqual(input_fingerprint(ROOT),'eb7c7f584a439d190b88ff5067659bedb2635cdaee8f83c38729381db345c503')
+        # Display V1 (4dc2fa4b… -> eb7c7f58…) and V1.1 HUD position change compiled inputs: one rebuild each.
+        self.assertEqual(input_fingerprint(ROOT),'694e84a87ba3b27bcbdf00d1b38ce317a340b1813e082e632d2006e583961738')
 
     def test_original_artwork_separate_from_text_and_complete_package(self):
         assets=launcher_assets(ROOT);text=collect(ROOT)

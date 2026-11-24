@@ -1,5 +1,48 @@
 # Display validation
 
+## V1.1 HUD position (feature branch, 0.2.2, unreleased) — 2026-11-24
+
+Requested by the owner after the V1 hardware checks: a setting, next to Aspect,
+that keeps the HUD and menu footers centred on wide game areas, switchable at
+any time. `hud_layout` in nitrogen-options.ini: 0 Edges (default, the original
+placement), 1 Centred (16:9). Centred anchors edge-anchored UI roles (corner
+HUD, score stack, weapon panel and footers) to the edges of a centred 16:9
+region when the game area is wider than 16:9; centre-anchored phrases, menus
+and the 3D world are unchanged, and a game area of 16:9 or narrower is
+identical in both modes. It is in F1 Settings (live) and the launcher's
+Settings file. VERSION stays 0.2.2; the compiled-game inputs change again (one
+rebuild); native selection, coverage (38.4156% / 61.5844%), clocks and the
+framework checkout are unchanged.
+
+| Check | Result |
+| --- | --- |
+| Edges reproduces the original anchors exactly; Centred places 3840x1080 HUD edges at 1000 and 2840 (a 1920-wide region); centred parts never move; 16:9 and narrower game areas are identical in both modes; invalid values ignored | pass (tests/test_display_options.py) |
+| Persistence: default Edges, saved Centred, invalid value ignored; launcher read/save and range | pass |
+| Measurement preset `v1` adds a Centred run (`v1-hud-centred`) and records the HUD layout | pass (tests) |
+| Real normal build with V1.1 (two jobs) | pass (compiled-game inputs `694e84a8…`) |
+| Owner's PC: Edges still identical to V0, Centred HUD position by screenshot and by eye, live switching | pending |
+
+## V1 owner hardware validation — 2026-11-24
+
+On the owner's main PC (GTX 1080 Ti, driver 582.78, Samsung C49HG9x 3840x1080
+at 144 Hz), V1 candidate `aa483b0` installed into a test copy (inputs
+`eb7c7f58…`, normal build; the owner's normal folder kept its accepted build).
+All results below passed; V1 is validated on the target hardware.
+
+| Check | Result |
+| --- | --- |
+| Auto against V0 | 26/26 golden captures byte-identical to the owner's V0 quick report (inputs `4dc2fa4b…`); the Auto run at the full 3840x1080 desktop produced exactly V0's borderless captures |
+| Aspect game areas | 32:9 3840x1080 (identical to Auto), 21:9 2520x1080, 16:9 1920x1080, 4:3 1440x1080; world rasters 10803, 7090, 5402, 4051 x 2304 |
+| Bar positions | all 15 presented captures: picture exactly at the expected columns (0-3839, 660-3179, 960-2879, 1200-2639), centred at 1919.5, everything outside pure black |
+| 3D limit | 7680x2160 at 200% requested 43211x9216 and used 32768x6988 ("texture limit"), not 100%; gameplay 59.7 fps with about 30 frames of 25-40 ms at that oversized extreme |
+| 200% in F1, F1 report | confirmed by the owner |
+| VSync | Off setting in effect (measured); live switching off and on while playing confirmed by the owner |
+| Visual look of each Aspect | confirmed by the owner |
+
+Observed separately, not caused by V1: with the F1 menu bar on autohide, the
+bar could not be revealed in fullscreen; the owner switched to windowed,
+turned autohide off and returned. Recorded as an existing menu-bar issue.
+
 ## V1 Aspect, VSync and 3D-size reporting (feature branch, 0.2.2, unreleased) — 2026-11-24
 
 V1 adds two player settings, in the launcher's Settings > Display and in F1
@@ -50,7 +93,7 @@ change, so players get one rebuild; saves, settings, mods and imports are kept.
 | Launcher Settings: Aspect/VSync start at Auto/On and save through the bridge; layout at three window sizes | pass (12 browser tests) |
 | Real normal build compiles and links with V1 (two jobs) | pass |
 | Software-renderer golden route on the rebuilt game against the pre-V1 local V0 golden report | pass: 13/13 captures identical to the pre-V1 report (build 618eea77), and 13/13 between the two V1 runs |
-| OpenGL presentation: bars, Auto pixel identity, F1 report, VSync switching, clamping on a real GPU | not possible here (OpenGL 1.1 host); pending the owner's PC |
+| OpenGL presentation: bars, Auto pixel identity, F1 report, VSync switching, clamping on a real GPU | not possible here (OpenGL 1.1 host); passed on the owner's PC (below) |
 
 The software renderer does not run the window-display path, so the local
 golden check covers the game and the new option keys, not the V1

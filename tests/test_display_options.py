@@ -139,6 +139,48 @@ int main(){
 }
 ''', ['window_display.cpp'])
 
+    def test_hud_position_centred_moves_only_edge_anchors_into_a_16_9_region(self):
+        run_fixture(self, r"""
+#include "window_display.h"
+#include "nitrogen_options.h"
+#include <cassert>
+#include <cmath>
+#include <initializer_list>
+// Screen column of a UI vertex after the window mapping (game area dw wide).
+static float screen_x(float x,int role,int dw,int dh){
+ nitrogen_window_publish(dw,dh);
+ float y=120;nitrogen_window_ui_vertex(&x,&y,0x10u|(unsigned(role)<<5)|(240u<<8),0,0,240,0,0);
+ const int vw=(long long)dw*3<(long long)dh*4?dh*4/3:dw;
+ return x*vw/364.f+(dw-vw)/2;
+}
+static bool near(float a,float b){return std::fabs(a-b)<.01f;}
+int main(){
+ int x=0,w=0;
+ // Edges (default): the original anchors, the whole game area.
+ nitrogen_window_hud_span(3840,1080,&x,&w);assert(x==0&&w==3840);
+ const int step=nitrogen_window_ui_step(3840,1080);assert(step==4);
+ const float left=screen_x(10,1,3840,1080),right=screen_x(358,4,3840,1080),mid=screen_x(184,0,3840,1080);
+ const float bottom_left=screen_x(10,3,3840,1080);
+ assert(near(left,40)&&near(right,3800)&&near(mid,1920)&&near(bottom_left,40));
+ // Centred: a 1920-wide region in the middle of 3840x1080.
+ nitrogen_window_hud_layout(NITROGEN_HUD_CENTRED_16_9);
+ nitrogen_window_hud_span(3840,1080,&x,&w);assert(x==960&&w==1920);
+ assert(near(screen_x(10,1,3840,1080),1000)&&near(screen_x(358,4,3840,1080),2840));
+ assert(near(screen_x(10,3,3840,1080),1000));
+ assert(screen_x(184,0,3840,1080)==mid);          // centred phrases never move
+ nitrogen_window_hud_span(2520,1080,&x,&w);assert(x==300&&w==1920);  // 21:9 game area
+ // 16:9 or narrower game areas: centred is byte-for-byte the original placement.
+ for(int dw:{1920,1440,1280,800})for(int role:{0,1,2,3,4,5})for(float vx:{0.f,10.f,184.f,358.f,368.f}){
+  nitrogen_window_hud_layout(NITROGEN_HUD_EDGES);const float a=screen_x(vx,role,dw,1080);
+  nitrogen_window_hud_layout(NITROGEN_HUD_CENTRED_16_9);const float b=screen_x(vx,role,dw,1080);
+  assert(a==b);
+ }
+ // An invalid value is ignored, not applied.
+ nitrogen_window_hud_layout(7);nitrogen_window_hud_span(3840,1080,&x,&w);assert(x==960&&w==1920);
+ nitrogen_window_hud_layout(NITROGEN_HUD_EDGES);nitrogen_window_hud_span(3840,1080,&x,&w);assert(x==0&&w==3840);
+}
+""", ['window_display.cpp'])
+
     def test_options_persist_aspect_and_vsync_with_auto_and_on_defaults(self):
         source = r'''
 #include "nitrogen_options.h"
@@ -150,12 +192,15 @@ int main(int argc,char**argv){
  const int aspect=std::atoi(argv[2]),vsync=std::atoi(argv[3]);
  assert(nitrogen_option_get(NITROGEN_ASPECT)==aspect);
  assert(nitrogen_option_get(NITROGEN_VSYNC)==vsync);
+ assert(nitrogen_option_get(NITROGEN_HUD_LAYOUT)==(argc>4&&!std::strcmp(argv[4],"hud")));
  if(argc>4&&!std::strcmp(argv[4],"write")){
   assert(!nitrogen_option_set(NITROGEN_ASPECT,5));
   assert(!nitrogen_option_set(NITROGEN_ASPECT,-1));
   assert(!nitrogen_option_set(NITROGEN_VSYNC,2));
   assert(nitrogen_option_set(NITROGEN_ASPECT,NITROGEN_ASPECT_21_9));
   assert(nitrogen_option_set(NITROGEN_VSYNC,0));
+  assert(nitrogen_option_get(NITROGEN_HUD_LAYOUT)==NITROGEN_HUD_EDGES);   // default: original layout
+  assert(!nitrogen_option_set(NITROGEN_HUD_LAYOUT,2));
  }
 }
 '''
@@ -170,9 +215,13 @@ int main(int argc,char**argv){
             self.assertIn('aspect 3\n', text)
             self.assertIn('vsync 0\n', text)
             self.assertIn('master_volume 80\n', text)
+            self.assertIn('hud_layout 0\n', text)
+            config.write_text(text.replace('hud_layout 0', 'hud_layout 1'))
+            run_fixture(self, source, ['game_options.cpp'], [temp + '/', '3', '0', 'hud'], env)
+            config.write_text(text)   # back to the saved Edges layout
             run_fixture(self, source, ['game_options.cpp'], [temp + '/', '3', '0'], env)
             # Invalid stored values are ignored, never applied.
-            config.write_text('aspect 7\nvsync 2\n')
+            config.write_text('aspect 7\nvsync 2\nhud_layout 5\n')
             run_fixture(self, source, ['game_options.cpp'], [temp + '/', '0', '1'], env)
 
 

@@ -38,6 +38,7 @@ static void nitrogen_window_update()
     nitrogen_window_frame(s_frame_count);
     nitrogen_options_init(SDL_GetBasePath());
     nitrogen_window_ui_scale(nitrogen_option_get(NITROGEN_HUD_SCALE));
+    nitrogen_window_hud_layout(nitrogen_option_get(NITROGEN_HUD_LAYOUT));
     static int applied_volume = -1;
     const int volume = nitrogen_option_get(NITROGEN_MASTER_VOLUME);
     if (applied_volume != volume) { host_volume_set(volume); applied_volume = volume; }

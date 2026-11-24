@@ -25,6 +25,10 @@ void nitrogen_window_ui_vertex(float *x, float *y, unsigned flags,
                                int wide_width, int wide_offset);
 int nitrogen_window_ui_step(int width, int height);
 void nitrogen_window_ui_scale(int step); /* 0 = AUTO; otherwise 2,3,4,6 */
+/* 0 = edges of the game area; 1 = edges of a centred 16:9 region. */
+void nitrogen_window_hud_layout(int layout);
+/* The horizontal span edge-anchored UI uses inside a game area width. */
+void nitrogen_window_hud_span(int width, int height, int *x, int *span_w);
 void nitrogen_window_world_raster(int width, int height, int source_width, int source_height, int percent);
 void nitrogen_window_world_size(int *width, int *height);
 /* Game-area shape. AUTO returns the window itself and its reduced ratio;

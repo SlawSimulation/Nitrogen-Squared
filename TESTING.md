@@ -2,6 +2,19 @@
 
 ## Current acceptance and update checks
 
+**Display V1.1 — HUD position (feature branch, still 0.2.2).**
+A new HUD position setting, next to Aspect in F1 Settings and in the launcher's
+settings file: Edges (default, as before) or Centred (16:9). Centred keeps the
+corner HUD, weapon panel, score and menu footers inside a centred 16:9 area
+when the game area is wider, such as 32:9 on your 49-inch; centred menus,
+text and the 3D world do not move, and 16:9 or narrower areas look the same
+in both modes. It switches while playing. One more game rebuild; saves and
+settings are kept.
+
+Focused checks (check N2-DISPLAY-HUD): with HUD position Edges, the V1 Auto
+golden screenshots stay identical to V0; with Centred at 32:9, the HUD sits in
+the middle 1920 pixels; switch both ways while playing.
+
 **Display V1 — Aspect, VSync and 3D-size reporting (feature branch, still 0.2.2).**
 V1 adds two settings, in the launcher's Settings > Display and in F1 Settings
 (not the game's own Video menu): Aspect (Auto, Original 4:3, 16:9, 21:9, 32:9)
@@ -30,8 +43,9 @@ Focused checks on the GTX 1080 Ti / 49-inch PC (check N2-DISPLAY-V1):
    Turn VSync off and on again; the "VSync in effect" line follows.
 4. Optional: 200% scene resolution in a large window; F1 shows requested and
    actual 3D sizes and any limit.
-Visual results are pending until checked on your PC: this development host
-only runs the software renderer, which does not use the OpenGL presentation.
+Result on 2026-11-24 (main PC, GTX 1080 Ti, 49-inch at 144 Hz): all four checks
+passed, including Auto identical to V0, exact bar positions, the 1080 Ti's
+32768 texture limit and live VSync switching. V1 is validated on that PC.
 
 **Display V0 — baseline measurement tooling (feature branch, measurement only).**
 V0 adds tools/measurement: a measurement executable linked separately against
@@ -1106,9 +1120,23 @@ Instructions for future maintainers and assistants:
     "runtime": "Windows / Linux x64 \u00b7 USA disc",
     "cart": "",
     "createdAt": "2026-11-10",
-    "description": "Repairs future source mtimes behind the CMake loop, uses 80% desktop thread budgets and displays build stage/detail/workers/elapsed. Retains disc-derived game icon and interrupted-setup repairs. CI and owner verification pending. Corrects pre-1980 bundled-file ZIP metadata rejection; d83eedd source/UI and runtime checks passed before packaging failed. Adds multi-BIN (per-track) CUE import; player and CI verification pending. Adds V0 display measurement tooling (no runtime change). V1 adds Aspect and VSync settings and reports the actual 3D size; one rebuild, owner verification pending."
+    "description": "Repairs future source mtimes behind the CMake loop, uses 80% desktop thread budgets and displays build stage/detail/workers/elapsed. Retains disc-derived game icon and interrupted-setup repairs. CI and owner verification pending. Corrects pre-1980 bundled-file ZIP metadata rejection; d83eedd source/UI and runtime checks passed before packaging failed. Adds multi-BIN (per-track) CUE import; player and CI verification pending. Adds V0 display measurement tooling (no runtime change). V1 adds Aspect and VSync settings and reports the actual 3D size (validated on the owner's PC). V1.1 adds a HUD position setting; owner verification pending."
   },
   "checks": [
+    {
+      "id": "N2-DISPLAY-HUD",
+      "title": "Check the HUD position setting at 32:9",
+      "area": "Display options (V1.1)",
+      "required": true,
+      "priority": "high",
+      "steps": [
+        "In your test copy, install the V1.1 candidate and let the launcher rebuild the game once. Preserve .local and your saves.",
+        "Run measure_display.py --preset v1 --baseline pointing at your V0 quick report.json; check the baseline comparison stays identical.",
+        "In F1 Settings with Aspect Auto (32:9), switch HUD position between Edges and Centred (16:9) while playing; check the HUD, weapon panel and menu footers."
+      ],
+      "expected": "Edges looks and measures exactly as before. Centred keeps the HUD and menu footers inside the middle 16:9 area, centred menus and the 3D world do not move, and switching applies immediately.",
+      "context": "Feature branch at 0.2.2; one more game rebuild. Coverage and game timing unchanged."
+    },
     {
       "id": "N2-DISPLAY-V1",
       "title": "Check Aspect, VSync and 3D-size reporting on the ultrawide PC",
