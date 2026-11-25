@@ -115,6 +115,7 @@ struct Config {
     struct ExtraRequest { uint64_t rel; int extra, value; };
     std::vector<ExtraRequest> extras_rel;  // maintenance: F1 game-extras requests
     int gte_aspect_num = 0, gte_aspect_den = 0;   // maintenance: projection squeeze
+    std::vector<uint64_t> pgxp_stats_rel;  // maintenance: perspective-texture coverage counters
 } cfg;
 bool load_config() {
     const char *path = std::getenv("NITROGEN_MEASURE_CONFIG");
@@ -144,6 +145,7 @@ bool load_config() {
         else if (key == "capture_rel") { uint64_t f = 0; s >> f; cfg.captures_rel.push_back(f); }
         else if (key == "ram_dump_rel") { uint64_t f = 0; s >> f; cfg.ram_dumps_rel.push_back(f); }
         else if (key == "gte_aspect") s >> cfg.gte_aspect_num >> cfg.gte_aspect_den;
+        else if (key == "pgxp_stats_rel") { uint64_t f = 0; s >> f; cfg.pgxp_stats_rel.push_back(f); }
         else if (key == "extra_rel") { Config::ExtraRequest r{}; s >> r.rel >> r.extra >> r.value; cfg.extras_rel.push_back(r); }
         else if (key == "scale_sample") { uint64_t f = 0; s >> f; cfg.scale_samples.push_back(f); }
         else if (key == "scale_rel") { uint64_t f = 0; s >> f; cfg.scale_rel.push_back(f); }
@@ -688,6 +690,20 @@ extern "C" bool __wrap_SDL_PollEvent(SDL_Event *event) {
                     }
                 }
                 instrumented = 1;
+            }
+        for (uint64_t f : cfg.pgxp_stats_rel)
+            if (f == rel) {   // free-running totals; diff two samples for a window
+                uint64_t att = 0, arm = 0, off = 0, nosrc = 0, noz = 0;
+                gpu_texture_correction_stats(&att, &arm, &off, &nosrc, &noz);
+                if (FILE *out = std::fopen((cfg.out + "/pgxp-stats.jsonl").c_str(), "a")) {
+                    std::fprintf(out, "{\"rel\":%llu,\"frame\":%llu,\"enabled\":%d,\"attempts\":%llu,"
+                                 "\"armed\":%llu,\"no_correction\":%llu,\"no_source\":%llu,\"no_depth\":%llu}\n",
+                                 (unsigned long long)rel, (unsigned long long)frame,
+                                 gpu_texture_correction_enabled(), (unsigned long long)att,
+                                 (unsigned long long)arm, (unsigned long long)off,
+                                 (unsigned long long)nosrc, (unsigned long long)noz);
+                    std::fclose(out);
+                }
             }
         // Re-applied every frame: the framework's own projection refresh may
         // reset it when the game engages widescreen.

@@ -1,0 +1,83 @@
+{
+  "id": "original-mesa-2560x1080",
+  "description": "Original look, 21:9 window through Mesa llvmpipe.",
+  "renderer": "mesa",
+  "window": {
+    "mode": "windowed",
+    "width": 2560,
+    "height": 1080
+  },
+  "options": {},
+  "route": "default",
+  "capture_kind": "present",
+  "captures": [
+    400,
+    1600,
+    2700
+  ],
+  "baseline_set": "original",
+  "checks": [
+    {
+      "type": "route_completed"
+    },
+    {
+      "type": "page_at",
+      "frame": 400,
+      "page": 4
+    },
+    {
+      "type": "image",
+      "capture": 400,
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "exact": true
+      }
+    },
+    {
+      "type": "image",
+      "capture": 1600,
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "exact": true
+      }
+    },
+    {
+      "type": "image",
+      "capture": 2700,
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "exact": true
+      }
+    }
+  ]
+}
