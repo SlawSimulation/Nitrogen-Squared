@@ -1,6 +1,6 @@
 {
   "id": "v4-dither-fine-1024x768",
-  "description": "V4-b Fine dithering: the picture changes; HUD compared with the original.",
+  "description": "V4-b Fine dithering: the picture changes. The PS1 dithers texture-modulated and shaded primitives, HUD ones included, so the HUD is expected to change too and is not compared with the original.",
   "renderer": "mesa",
   "window": {
     "mode": "windowed",
@@ -121,48 +121,6 @@
       ],
       "tolerance": {
         "expect_change": true
-      }
-    },
-    {
-      "type": "image",
-      "capture": 400,
-      "against": "original-mesa-1024x768",
-      "regions": [
-        {
-          "name": "hud",
-          "mask": "ui"
-        }
-      ],
-      "tolerance": {
-        "exact": true
-      }
-    },
-    {
-      "type": "image",
-      "capture": 1600,
-      "against": "original-mesa-1024x768",
-      "regions": [
-        {
-          "name": "hud",
-          "mask": "ui"
-        }
-      ],
-      "tolerance": {
-        "exact": true
-      }
-    },
-    {
-      "type": "image",
-      "capture": 2700,
-      "against": "original-mesa-1024x768",
-      "regions": [
-        {
-          "name": "hud",
-          "mask": "ui"
-        }
-      ],
-      "tolerance": {
-        "exact": true
       }
     }
   ]
