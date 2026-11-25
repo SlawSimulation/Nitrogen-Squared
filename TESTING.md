@@ -2,6 +2,35 @@
 
 ## Current acceptance and update checks
 
+**Display V4 — optional Picture settings (dev, still 0.2.2).**
+A new Picture section in F1 Settings. Every setting is off by default, so the
+game looks exactly as before until you change something:
+Textures (Sharp, the original, or Smooth for the 3D world; the HUD, menus and
+sprites stay sharp), Dithering (Original, Off for true colour, or Fine),
+Colour model (Original, CRT, Composite or Trinitron), Scanlines with a
+strength slider, and Brightness. Presets (Original PS1, Smooth, CRT and
+Composite TV) only fill in those settings, which you can still change one by
+one; Reset to original restores the original look. Settings are saved in
+nitrogen-options.ini and apply while playing. One more game rebuild; saves and
+settings are kept.
+
+These settings are checked automatically on the development server through
+software rendering (Mesa llvmpipe): the original look stays pixel-identical at
+4:3, 16:9, 21:9 and 32:9, each setting changes the picture, combinations work
+at 21:9 and 32:9, Reset restores the original exactly, and a change made
+mid-game is saved and survives a restart. Software rendering is not your GPU,
+so an optional final look on your PC is listed below (check N2-DISPLAY-V4).
+Known: under Smooth, the 3D weapon model shown inside the weapon gauge is
+smoothed too (it is 3D, not HUD); semi-transparent HUD parts show the
+smoothed world behind them.
+
+Optional check on your PC (check N2-DISPLAY-V4):
+1. Install the V4 candidate in your test copy and let it rebuild once.
+2. In F1 Settings, Picture, try each preset and a few individual settings
+   while playing; then press Reset to original.
+3. Look for anything that seems wrong on your monitor (for example scanline
+   moiré at 32:9 or colour banding) and tell me what you see.
+
 **Display V2 — smoother motion and the F1 bar (dev, still 0.2.2).**
 The game makes 59.94 frames a second; a 144 Hz screen must show each one for
 2 or 3 refreshes in turn, which can look like slight judder. A new Fullscreen
@@ -1192,9 +1221,23 @@ Instructions for future maintainers and assistants:
     "runtime": "Windows / Linux x64 \u00b7 USA disc",
     "cart": "",
     "createdAt": "2026-11-10",
-    "description": "Repairs future source mtimes behind the CMake loop, uses 80% desktop thread budgets and displays build stage/detail/workers/elapsed. Retains disc-derived game icon and interrupted-setup repairs. CI and owner verification pending. Corrects pre-1980 bundled-file ZIP metadata rejection; d83eedd source/UI and runtime checks passed before packaging failed. Adds multi-BIN (per-track) CUE import; player and CI verification pending. Adds V0 display measurement tooling (no runtime change). V1 adds Aspect and VSync settings and reports the actual 3D size (validated on the owner's PC). V1.1 adds a HUD position setting (validated on the owner's PC). V1.2 gives the game's Video menu and F1 Settings the same display options and adds the game's Extras to F1 (validated on the owner's PC). V2 adds a Fullscreen refresh setting for even frame pacing and lets F1 reveal an autohidden menu bar; owner verification pending."
+    "description": "Repairs future source mtimes behind the CMake loop, uses 80% desktop thread budgets and displays build stage/detail/workers/elapsed. Retains disc-derived game icon and interrupted-setup repairs. CI and owner verification pending. Corrects pre-1980 bundled-file ZIP metadata rejection; d83eedd source/UI and runtime checks passed before packaging failed. Adds multi-BIN (per-track) CUE import; player and CI verification pending. Adds V0 display measurement tooling (no runtime change). V1 adds Aspect and VSync settings and reports the actual 3D size (validated on the owner's PC). V1.1 adds a HUD position setting (validated on the owner's PC). V1.2 gives the game's Video menu and F1 Settings the same display options and adds the game's Extras to F1 (validated on the owner's PC). V2 adds a Fullscreen refresh setting for even frame pacing and lets F1 reveal an autohidden menu bar; owner verification pending. V4 adds optional Picture settings (texture filtering, dithering, colour model, scanlines, brightness, presets, reset), automatically tested through software rendering; an optional real-GPU look is pending."
   },
   "checks": [
+    {
+      "id": "N2-DISPLAY-V4",
+      "title": "Optional: look at the V4 Picture settings on the real GPU",
+      "area": "Picture settings (V4)",
+      "required": false,
+      "priority": "normal",
+      "steps": [
+        "In your test copy, install the V4 candidate and let the launcher rebuild the game once. Preserve .local and your saves.",
+        "In F1 Settings, Picture, try each preset and a few individual settings while playing at your usual aspect.",
+        "Press Reset to original and check the picture looks exactly as before."
+      ],
+      "expected": "Each setting changes the picture as named, the HUD and menus stay sharp under Smooth, nothing flickers or bands badly at 32:9, and Reset to original restores the original look.",
+      "context": "Dev at 0.2.2; one more game rebuild. Automated software-rendered checks already pass; this is an optional real-GPU look."
+    },
     {
       "id": "N2-DISPLAY-V2",
       "title": "Check Fullscreen refresh smoothness and the F1 bar",

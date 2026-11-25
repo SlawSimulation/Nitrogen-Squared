@@ -1,5 +1,68 @@
 # Display validation
 
+## V4 Picture settings and automated testing (dev, 0.2.2, unreleased) — 2026-11-25
+
+Owner-approved V4-a and V4-b, with the HUD-mask testing follow-up. V4-c
+(perspective-correct textures) is not implemented. VERSION stays 0.2.2;
+compiled-game inputs change (one rebuild). Native selection, coverage
+(38.4156% / 61.5844%), clocks and the framework checkout are unchanged.
+
+### Settings
+
+`texture_filter` (0 Sharp, 1 Smooth), `dithering` (0 Original, 1 Off, 2 Fine),
+`screen_model` (0 Original, 1 CRT, 2 Composite, 3 Trinitron), `scanlines`
+(0 or 10-100 in steps of 10), `brightness` (80-130 in steps of 5, 100 =
+unchanged). All default to the original look and are applied live only when
+they change; Original restores the framework's own startup value. Presets
+(Original PS1, Smooth, CRT, Composite TV) only write these settings; any
+further change shows Custom. Reset to original applies the Original preset.
+
+- Smooth: Nitrogen stops forcing the framework's filter off every frame. In
+  the adapted renderer, primitives Nitrogen tags as HUD/menu and 2D sprite
+  rectangles keep nearest sampling; the framework's own "world only" rule
+  needs PGXP-proven geometry, so Nitrogen's tagging is used instead.
+- Dithering, scanlines and brightness use the framework's public setters.
+- Colour models: the framework's screen-colour LUT is applied only where the
+  CPU converts 15-bit scanout, which Nitrogen's OpenGL presentation never
+  reaches; the first Mesa run showed CRT, Composite and Trinitron changed no
+  pixel. They now run as a one-pass post effect through the framework's live
+  chain with the framework's own constants (color_lut.c). A unit test compares
+  the formula with the framework LUT for all 32,768 15-bit colours of each
+  model: within 3 of 255 levels and at most 0.5 on average (the GPU sees the
+  presented 8-bit value, the LUT the 5-bit index).
+
+### Test infrastructure
+
+- Mesa 26.3.1 llvmpipe (checksum-verified) placed only beside private test
+  executables; OpenGL 4.6 Core; deterministic: repeated runs are byte-identical.
+- `tools/measurement/n2test.py` runs real-game scenarios (18 files) and labels
+  evidence; captures and baselines are private in `.local`.
+- HUD masks: a test-only switch collapses primitives Nitrogen tags as HUD or
+  menu off screen (an early return first skipped the renderer's VRAM sync and
+  changed later world texels by one colour step; masks covered 81% of the
+  screen). Masks come from two render-worker-off runs, with the HUD hidden only
+  in the drawn frame (two frame hooks before presentation, measured). 1024x768
+  masks cover 24,368-26,220 pixels: score, coins, lives, high-score bar,
+  weapon gauge, ammo and the paused caption.
+
+### Results (software-rendered, Mesa llvmpipe; not GPU-representative)
+
+| Check | Result |
+| --- | --- |
+| Original look on the final build, all settings at default: software guest image and Mesa at 1024x768, 1920x1080, 2560x1080, 3840x1080 | 5/5 byte-identical to the pre-V4 baselines (15 images) |
+| Each setting changes the picture (1024x768, frames 400/1600/2700): Smooth, dithering Off/Fine, CRT, Composite, Trinitron, scanlines 50%, brightness 120% | pass; e.g. CRT 99.7% of pixels, mean 10.6 levels; brightness mean 15 levels |
+| Combinations at 21:9 (Smooth + CRT + scanlines) and 32:9 (Smooth, dithering off, Composite, scanlines 30%, brightness 105%) | pass |
+| Reset to original mid-game | byte-identical to the original at every later capture; original values saved |
+| Persistence | a mid-game F1-equivalent change is saved and a real restart from that file renders byte-identically to the same settings set before launch |
+| Determinism | every V4 scenario re-run matches its recorded baseline exactly |
+| Smooth keeps the HUD identical | not verified: 1,547-2,332 HUD-mask pixels change. Semi-transparent HUD parts show the smoothed world, and the 3D weapon model inside the weapon gauge is smoothed (it is not tagged HUD). Owner decision pending |
+| Dithering and the HUD | the PS1 dithers HUD primitives too, so those scenarios compare the world only |
+| Unit tests | 291 run; only the 7 pre-existing test_portable git errors; source audit passes |
+
+Not tested here: the owner's GPU and monitor (real colour, scanline moiré at
+32:9, performance). Software-rendered timings are not meaningful. Optional
+owner check: N2-DISPLAY-V4.
+
 ## V3 stage 1: ultrawide investigation (dev, 0.2.2, no runtime change) — 2026-11-24
 
 Investigation only, approved by the owner; no widening is implemented. The
