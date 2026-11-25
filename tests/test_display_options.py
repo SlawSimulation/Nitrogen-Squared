@@ -493,14 +493,14 @@ int main(int,char**argv){
         update = host[host.index('static void nitrogen_window_update()\n{'):]
         update = update[:update.index('\n}\n')]
         for applied, setter in (('applied_dither', 'gl_renderer_set_dithering('),
-                                ('applied_screen', 'gpu_set_screen_kind('),
+                                ('applied_screen', 'gl_renderer_set_post_shader('),
                                 ('applied_scan', 'gl_renderer_set_scanlines('),
                                 ('applied_bright', 'gl_renderer_set_post_gamma(')):
             with self.subTest(setter=setter):
                 guard = update.index(f'!= {applied})')
                 self.assertLess(guard, update.index(setter))
         # "Original" restores the framework's own startup values, captured once.
-        for startup in ('startup_dither = gl_renderer_dithering();', 'startup_screen = g_video_screen;',
+        for startup in ('startup_dither = gl_renderer_dithering();', 'startup_post_shader = g_video_post_shader;',
                         'startup_scan_on = gl_renderer_get_scanlines(&startup_scan_strength);',
                         'startup_gamma = gl_renderer_get_post_gamma();'):
             self.assertIn(startup, update)

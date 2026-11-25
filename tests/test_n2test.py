@@ -43,8 +43,14 @@ class ValidationTests(unittest.TestCase):
         found = n2test.load_scenarios([ROOT / "tools" / "measurement" / "scenarios"], [])
         self.assertGreaterEqual(len(found), 5)
         self.assertEqual({s["renderer"] for s in found}, {"software", "mesa"})
+        originals = [s for s in found if s["id"].startswith("original-")]
+        self.assertGreaterEqual(len(originals), 5)
+        for s in originals:
+            self.assertEqual(s.get("options"), {}, "original scenarios use the original look")
+            self.assertEqual(s.get("baseline_set"), "original")
         for s in found:
-            self.assertEqual(s.get("options"), {}, "baseline scenarios use the original look")
+            if s["id"].startswith("v4-"):
+                self.assertEqual(s.get("baseline_set"), "v4", "feature baselines never replace the original set")
 
     def test_rejects_bad_scenarios(self):
         self.assertEqual(n2test.validate(scenario()), [])
