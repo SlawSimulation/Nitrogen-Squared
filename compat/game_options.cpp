@@ -14,9 +14,12 @@
 namespace {
 // Defaults keep the original presentation: AUTO aspect fills the window, VSync on.
 std::array<std::atomic<int>, NITROGEN_OPTION_COUNT> values{{NITROGEN_WINDOWED, 0, 100, 100, NITROGEN_ASPECT_AUTO, 1, NITROGEN_HUD_EDGES,
-                                                            NITROGEN_REFRESH_DESKTOP, NITROGEN_FILTER_SHARP}};
+                                                            NITROGEN_REFRESH_DESKTOP, NITROGEN_FILTER_SHARP,
+                                                            NITROGEN_DITHER_ORIGINAL, NITROGEN_SCREEN_ORIGINAL,
+                                                            0, 100}};
 constexpr const char *names[]{"video_mode", "hud_scale", "render_percent", "master_volume", "aspect", "vsync", "hud_layout",
-                              "fullscreen_refresh", "texture_filter"};
+                              "fullscreen_refresh", "texture_filter", "dithering", "screen_model", "scanlines",
+                              "brightness"};
 static_assert(sizeof(names) / sizeof(names[0]) == NITROGEN_OPTION_COUNT, "one name per option");
 std::mutex preferences_mutex;
 std::string preferences_path;
@@ -40,9 +43,40 @@ bool valid(int key, int value)
     case NITROGEN_HUD_LAYOUT: return value == NITROGEN_HUD_EDGES || value == NITROGEN_HUD_CENTRED_16_9;
     case NITROGEN_FULLSCREEN_REFRESH: return value == NITROGEN_REFRESH_DESKTOP || value == NITROGEN_REFRESH_SMOOTH_60;
     case NITROGEN_TEXTURE_FILTER: return value == NITROGEN_FILTER_SHARP || value == NITROGEN_FILTER_SMOOTH;
+    case NITROGEN_DITHERING: return value >= NITROGEN_DITHER_ORIGINAL && value <= NITROGEN_DITHER_FINE;
+    case NITROGEN_SCREEN_MODEL: return value >= NITROGEN_SCREEN_ORIGINAL && value <= NITROGEN_SCREEN_TRINITRON;
+    case NITROGEN_SCANLINES: return value == 0 || (value >= 10 && value <= 100 && value % 10 == 0);
+    case NITROGEN_BRIGHTNESS: return value >= 80 && value <= 130 && value % 5 == 0;
     default: return false;
     }
 }
+}
+namespace {
+// Picture presets: texture filter, dithering, screen model, scanlines, brightness.
+constexpr int picture_keys[]{NITROGEN_TEXTURE_FILTER, NITROGEN_DITHERING, NITROGEN_SCREEN_MODEL,
+                             NITROGEN_SCANLINES, NITROGEN_BRIGHTNESS};
+constexpr int picture_presets[NITROGEN_PICTURE_PRESET_COUNT][5]{
+    {NITROGEN_FILTER_SHARP, NITROGEN_DITHER_ORIGINAL, NITROGEN_SCREEN_ORIGINAL, 0, 100},   // Original PS1
+    {NITROGEN_FILTER_SMOOTH, NITROGEN_DITHER_OFF, NITROGEN_SCREEN_ORIGINAL, 0, 100},       // Smooth
+    {NITROGEN_FILTER_SHARP, NITROGEN_DITHER_ORIGINAL, NITROGEN_SCREEN_CRT, 40, 100},       // CRT
+    {NITROGEN_FILTER_SHARP, NITROGEN_DITHER_ORIGINAL, NITROGEN_SCREEN_COMPOSITE, 30, 105}, // Composite TV
+};
+}
+extern "C" int nitrogen_picture_preset_apply(int preset)
+{
+    if (preset < 0 || preset >= NITROGEN_PICTURE_PRESET_COUNT) return 0;
+    int ok = 1;
+    for (int i = 0; i < 5; ++i) ok &= nitrogen_option_set(picture_keys[i], picture_presets[preset][i]);
+    return ok;
+}
+extern "C" int nitrogen_picture_preset_current(void)
+{
+    for (int p = 0; p < NITROGEN_PICTURE_PRESET_COUNT; ++p) {
+        int match = 1;
+        for (int i = 0; i < 5; ++i) match &= nitrogen_option_get(picture_keys[i]) == picture_presets[p][i];
+        if (match) return p;
+    }
+    return NITROGEN_PICTURE_CUSTOM;
 }
 extern "C" int nitrogen_options_desktop(void)
 {

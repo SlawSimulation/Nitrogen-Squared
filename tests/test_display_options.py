@@ -425,8 +425,97 @@ int main(int,char**argv){
         self.assertNotIn('g_video_texfilter = 0;', update)      # no longer forced
         menu = (ROOT / 'compat' / 'desktop_menu.cpp').read_text(encoding='utf-8')
         picture = menu[menu.index('void picture_settings()'):]
-        self.assertIn('"Sharp (original)"', picture[:600])
-        self.assertIn('nitrogen_option_set(NITROGEN_TEXTURE_FILTER, filter)', picture[:900])
+        picture = picture[:picture.index('\n}\n')]           # the whole Picture section
+        self.assertIn('"Sharp (original)"', picture)
+        self.assertIn('nitrogen_option_set(NITROGEN_TEXTURE_FILTER, filter)', picture)
+
+
+@unittest.skipUnless(COMPILER, 'C++ compiler required for display fixtures')
+class PictureSettingsTests(unittest.TestCase):
+    """V4-b: dithering, colour model, scanlines, brightness, presets and reset."""
+
+    def test_defaults_ranges_presets_reset_and_restart(self):
+        with tempfile.TemporaryDirectory() as temp:
+            config = Path(temp) / 'nitrogen-options.ini'
+            env = dict(os.environ, NITROGEN_OPTIONS_FILE=str(config))
+            source = r"""
+#include "nitrogen_options.h"
+#include <cassert>
+#include <cstring>
+#include <initializer_list>
+static void original(){
+ assert(nitrogen_option_get(NITROGEN_TEXTURE_FILTER)==NITROGEN_FILTER_SHARP);
+ assert(nitrogen_option_get(NITROGEN_DITHERING)==NITROGEN_DITHER_ORIGINAL);
+ assert(nitrogen_option_get(NITROGEN_SCREEN_MODEL)==NITROGEN_SCREEN_ORIGINAL);
+ assert(nitrogen_option_get(NITROGEN_SCANLINES)==0 && nitrogen_option_get(NITROGEN_BRIGHTNESS)==100);
+ assert(nitrogen_picture_preset_current()==NITROGEN_PICTURE_ORIGINAL);
+}
+int main(int,char**argv){
+ nitrogen_options_init("unused/");
+ if(!std::strcmp(argv[1],"write")){
+  original();                                                   // every default is the original look
+  for(int bad:{-1,3}) assert(!nitrogen_option_set(NITROGEN_DITHERING,bad));
+  for(int bad:{-1,4}) assert(!nitrogen_option_set(NITROGEN_SCREEN_MODEL,bad));
+  for(int bad:{5,9,15,101,110}) assert(!nitrogen_option_set(NITROGEN_SCANLINES,bad));
+  for(int bad:{75,82,135,0}) assert(!nitrogen_option_set(NITROGEN_BRIGHTNESS,bad));
+  assert(nitrogen_option_set(NITROGEN_SCANLINES,10) && nitrogen_option_set(NITROGEN_SCANLINES,100));
+  assert(nitrogen_option_set(NITROGEN_BRIGHTNESS,80) && nitrogen_option_set(NITROGEN_BRIGHTNESS,130));
+  // Presets only write the individual settings; any change afterwards is Custom.
+  assert(nitrogen_picture_preset_apply(NITROGEN_PICTURE_CRT));
+  assert(nitrogen_picture_preset_current()==NITROGEN_PICTURE_CRT);
+  assert(nitrogen_option_get(NITROGEN_SCREEN_MODEL)==NITROGEN_SCREEN_CRT && nitrogen_option_get(NITROGEN_SCANLINES)==40);
+  assert(nitrogen_option_set(NITROGEN_BRIGHTNESS,110));
+  assert(nitrogen_picture_preset_current()==NITROGEN_PICTURE_CUSTOM);
+  assert(nitrogen_option_get(NITROGEN_SCREEN_MODEL)==NITROGEN_SCREEN_CRT);   // still customisable
+  assert(!nitrogen_picture_preset_apply(NITROGEN_PICTURE_PRESET_COUNT) && !nitrogen_picture_preset_apply(-1));
+  assert(nitrogen_picture_preset_apply(NITROGEN_PICTURE_SMOOTH));
+  assert(nitrogen_option_get(NITROGEN_TEXTURE_FILTER)==NITROGEN_FILTER_SMOOTH);
+  assert(nitrogen_option_set(NITROGEN_SCANLINES,70) && nitrogen_option_set(NITROGEN_DITHERING,NITROGEN_DITHER_FINE));
+ } else if(!std::strcmp(argv[1],"restart")){
+  // A restart reads back exactly what was saved, then Reset restores the original look.
+  assert(nitrogen_option_get(NITROGEN_TEXTURE_FILTER)==NITROGEN_FILTER_SMOOTH);
+  assert(nitrogen_option_get(NITROGEN_SCANLINES)==70 && nitrogen_option_get(NITROGEN_DITHERING)==NITROGEN_DITHER_FINE);
+  assert(nitrogen_picture_preset_current()==NITROGEN_PICTURE_CUSTOM);
+  assert(nitrogen_picture_preset_apply(NITROGEN_PICTURE_ORIGINAL));
+  original();
+ } else original();                                            // the reset was saved too
+}
+"""
+            run_fixture(self, source, ['game_options.cpp'], ('write',), env)
+            run_fixture(self, source, ['game_options.cpp'], ('restart',), env)
+            run_fixture(self, source, ['game_options.cpp'], ('final',), env)
+            saved = config.read_text()
+            for line in ('texture_filter 0', 'dithering 0', 'screen_model 0', 'scanlines 0', 'brightness 100'):
+                self.assertIn(line, saved)
+
+    def test_host_applies_each_setting_only_when_it_changes(self):
+        host = (ROOT / 'compat' / 'runtime_host.cpp').read_text(encoding='utf-8')
+        update = host[host.index('static void nitrogen_window_update()\n{'):]
+        update = update[:update.index('\n}\n')]
+        for applied, setter in (('applied_dither', 'gl_renderer_set_dithering('),
+                                ('applied_screen', 'gpu_set_screen_kind('),
+                                ('applied_scan', 'gl_renderer_set_scanlines('),
+                                ('applied_bright', 'gl_renderer_set_post_gamma(')):
+            with self.subTest(setter=setter):
+                guard = update.index(f'!= {applied})')
+                self.assertLess(guard, update.index(setter))
+        # "Original" restores the framework's own startup values, captured once.
+        for startup in ('startup_dither = gl_renderer_dithering();', 'startup_screen = g_video_screen;',
+                        'startup_scan_on = gl_renderer_get_scanlines(&startup_scan_strength);',
+                        'startup_gamma = gl_renderer_get_post_gamma();'):
+            self.assertIn(startup, update)
+        self.assertIn('bright == 100 ? startup_gamma : bright / 100.0f', update)
+
+    def test_f1_picture_section_controls_and_reset(self):
+        menu = (ROOT / 'compat' / 'desktop_menu.cpp').read_text(encoding='utf-8')
+        picture = menu[menu.index('void picture_settings()'):]
+        picture = picture[:picture.index('\n}\n')]
+        for text in ('"Original PS1"', '"Custom"', '"Reset to original"', '"Dithering"', '"Colour model"',
+                     '"Scanlines"', '"Strength"', '"Brightness"', '"Trinitron"', '"Off (true colour)"'):
+            self.assertIn(text, picture)
+        self.assertIn('nitrogen_picture_preset_apply(NITROGEN_PICTURE_ORIGINAL)', picture)
+        self.assertIn('BeginDisabled(current == NITROGEN_PICTURE_ORIGINAL)', picture)   # nothing to reset
+        self.assertIn('ImGui::SeparatorText("Picture");', menu)
 
 
 class SettingsParityTests(unittest.TestCase):

@@ -169,6 +169,51 @@ class MaskTests(unittest.TestCase):
         self.assertIn("| not tested |", text)
 
 
+class ScenarioActionTests(unittest.TestCase):
+    """Mid-run settings, presets, saved options, restarts and must-change checks."""
+
+    def test_option_keys_follow_the_options_header(self):
+        import re
+        header = (ROOT / "compat" / "nitrogen_options.h").read_text(encoding="utf-8")
+        body = header[header.index("enum { NITROGEN_VIDEO_MODE"):]
+        body = body[:body.index("NITROGEN_OPTION_COUNT")]
+        names = re.findall(r"NITROGEN_([A-Z_]+)", body)
+        self.assertEqual(list(n2test.OPTION_KEYS), [n.lower() for n in names])
+        game = (ROOT / "compat" / "game_options.cpp").read_text(encoding="utf-8")
+        for key in n2test.OPTION_KEYS:
+            self.assertIn(f'"{key}"', game)          # the saved file uses the same names
+
+    def test_presets_follow_the_header(self):
+        header = (ROOT / "compat" / "nitrogen_options.h").read_text(encoding="utf-8")
+        order = ["ORIGINAL", "SMOOTH", "CRT", "COMPOSITE"]
+        positions = [header.index(f"NITROGEN_PICTURE_{n}") for n in order]
+        self.assertEqual(positions, sorted(positions))
+        self.assertEqual(list(n2test.PICTURE_PRESETS), [n.lower() for n in order])
+
+    def test_actions_and_restart_validate(self):
+        good = scenario(set_options_at=[[300, "texture_filter", 1]], preset_at=[[300, "original"]],
+                        restart=dict(checks=[dict(type="route_completed")]),
+                        checks=[dict(type="options_saved", values=dict(texture_filter=1)),
+                                dict(type="image", capture=400, against="original-mesa-1024x768",
+                                     regions=[dict(name="hud", mask="ui")], tolerance=dict(exact=True))])
+        self.assertEqual(n2test.validate(good), [])
+        for over in [dict(set_options_at=[[300, "bloom", 1]]), dict(set_options_at=[[300, "texture_filter"]]),
+                     dict(preset_at=[[300, "neon"]]), dict(restart=dict()),
+                     dict(checks=[dict(type="options_saved", values=dict(bloom=1))]),
+                     dict(restart=dict(checks=[dict(type="image", capture=999)]))]:
+            with self.subTest(over=over):
+                self.assertTrue(n2test.validate(scenario(**over)))
+
+    def test_expect_change_fails_when_a_setting_does_nothing(self):
+        a = image(64, 48)
+        same = n2test.compare_region(frozen(a), frozen(a), [0, 0, 1, 1])
+        self.assertFalse(n2test.within(same, {"expect_change": True}))
+        b = image(64, 48)
+        paint(b, 1, 1, (0, 0, 0))
+        self.assertTrue(n2test.within(n2test.compare_region(frozen(a), frozen(b), [0, 0, 1, 1]),
+                                      {"expect_change": True}))
+
+
 class EvidenceTests(unittest.TestCase):
     def test_labels_never_overstate(self):
         mesa = "OpenGL context created (4.6 (Core Profile) Mesa 26.3.1; llvmpipe (LLVM 23.1.5, 256 bits))"

@@ -140,6 +140,41 @@ static void nitrogen_window_update()
     const int filter = nitrogen_option_get(NITROGEN_TEXTURE_FILTER) == NITROGEN_FILTER_SMOOTH ? 1 : 0;
     g_video_texfilter = filter;
     if (gr_texture_filter() != filter) gr_set_texture_filter(filter);
+    // V4-b: each Picture setting is applied only when it changes. "Original"
+    // restores the framework's own startup value, so defaults never touch it.
+    static bool picture_ready = false;
+    static int startup_dither = 1, startup_screen = 0, startup_scan_on = 0;
+    static float startup_scan_strength = .5f, startup_gamma = 1.f;
+    static int applied_dither = NITROGEN_DITHER_ORIGINAL, applied_screen = NITROGEN_SCREEN_ORIGINAL;
+    static int applied_scan = 0, applied_bright = 100;
+    if (!picture_ready) {
+        picture_ready = true;
+        startup_dither = gl_renderer_dithering();
+        startup_screen = g_video_screen;
+        startup_scan_on = gl_renderer_get_scanlines(&startup_scan_strength);
+        startup_gamma = gl_renderer_get_post_gamma();
+    }
+    const int dither = nitrogen_option_get(NITROGEN_DITHERING);
+    if (dither != applied_dither) {
+        gl_renderer_set_dithering(dither == NITROGEN_DITHER_OFF ? 0 : dither == NITROGEN_DITHER_FINE ? 2 : startup_dither);
+        applied_dither = dither;
+    }
+    const int screen = nitrogen_option_get(NITROGEN_SCREEN_MODEL);
+    if (screen != applied_screen) {
+        gpu_set_screen_kind(screen == NITROGEN_SCREEN_ORIGINAL ? startup_screen : screen);
+        applied_screen = screen;
+    }
+    const int scan = nitrogen_option_get(NITROGEN_SCANLINES);
+    if (scan != applied_scan) {
+        if (scan) gl_renderer_set_scanlines(1, scan / 100.0f);
+        else gl_renderer_set_scanlines(startup_scan_on, startup_scan_strength);
+        applied_scan = scan;
+    }
+    const int bright = nitrogen_option_get(NITROGEN_BRIGHTNESS);
+    if (bright != applied_bright) {
+        gl_renderer_set_post_gamma(bright == 100 ? startup_gamma : bright / 100.0f);
+        applied_bright = bright;
+    }
     nitrogen_gpu_enable_ui();
     gpu_ws_set_auto_ui_in_place(0);
     int num = width, den = height;

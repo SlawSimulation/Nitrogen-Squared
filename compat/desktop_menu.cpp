@@ -94,13 +94,45 @@ void video_settings()
         nitrogen_option_set(NITROGEN_RENDER_PERCENT, std::clamp((percent + 2) / 5 * 5, 25, 200));
 }
 // V4 Picture: optional enhancements over the original look, each independent.
+// Presets only write these settings; "Reset to original" restores every one.
 void picture_settings()
 {
+    static const char *presets[] = {"Original PS1", "Smooth", "CRT", "Composite TV"};
+    const int current = nitrogen_picture_preset_current();
+    if (ImGui::BeginCombo("Preset", current >= 0 ? presets[current] : "Custom")) {
+        for (int i = 0; i < IM_ARRAYSIZE(presets); ++i)
+            if (ImGui::Selectable(presets[i], i == current)) nitrogen_picture_preset_apply(i);
+        ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+    ImGui::BeginDisabled(current == NITROGEN_PICTURE_ORIGINAL);
+    if (ImGui::Button("Reset to original")) nitrogen_picture_preset_apply(NITROGEN_PICTURE_ORIGINAL);
+    ImGui::EndDisabled();
     static const char *filters[] = {"Sharp (original)", "Smooth"};
     int filter = nitrogen_option_get(NITROGEN_TEXTURE_FILTER);
     if (ImGui::Combo("Textures", &filter, filters, IM_ARRAYSIZE(filters)))
         nitrogen_option_set(NITROGEN_TEXTURE_FILTER, filter);
     if (filter == NITROGEN_FILTER_SMOOTH) ImGui::TextDisabled("3D world only: the HUD, menus and sprites stay sharp.");
+    static const char *dithers[] = {"Original", "Off (true colour)", "Fine"};
+    int dither = nitrogen_option_get(NITROGEN_DITHERING);
+    if (ImGui::Combo("Dithering", &dither, dithers, IM_ARRAYSIZE(dithers)))
+        nitrogen_option_set(NITROGEN_DITHERING, dither);
+    static const char *screens[] = {"Original", "CRT", "Composite", "Trinitron"};
+    int screen = nitrogen_option_get(NITROGEN_SCREEN_MODEL);
+    if (ImGui::Combo("Colour model", &screen, screens, IM_ARRAYSIZE(screens)))
+        nitrogen_option_set(NITROGEN_SCREEN_MODEL, screen);
+    int scan = nitrogen_option_get(NITROGEN_SCANLINES);
+    bool scanlines = scan > 0;
+    if (ImGui::Checkbox("Scanlines", &scanlines)) nitrogen_option_set(NITROGEN_SCANLINES, scanlines ? 40 : 0);
+    if (scanlines) {
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(140);
+        if (ImGui::SliderInt("Strength", &scan, 10, 100, "%d%%", ImGuiSliderFlags_AlwaysClamp))
+            nitrogen_option_set(NITROGEN_SCANLINES, std::clamp((scan + 5) / 10 * 10, 10, 100));
+    }
+    int bright = nitrogen_option_get(NITROGEN_BRIGHTNESS);
+    if (ImGui::SliderInt("Brightness", &bright, 80, 130, "%d%%", ImGuiSliderFlags_AlwaysClamp))
+        nitrogen_option_set(NITROGEN_BRIGHTNESS, std::clamp((bright + 2) / 5 * 5, 80, 130));
 }
 // The game's own Extras menu choices. The game owns these values: F1 queues
 // a change that the game thread applies between frames, and only the game's
