@@ -1,0 +1,146 @@
+{
+  "id": "v4-combo-composite-3840x1080",
+  "description": "Combination at 32:9: Smooth textures, dithering off, Composite colour model, 30% scanlines, brightness 105%.",
+  "renderer": "mesa",
+  "window": {
+    "mode": "windowed",
+    "width": 3840,
+    "height": 1080
+  },
+  "options": {
+    "texture_filter": 1,
+    "dithering": 1,
+    "screen_model": 2,
+    "scanlines": 30,
+    "brightness": 105
+  },
+  "route": "default",
+  "capture_kind": "present",
+  "captures": [
+    400,
+    1600,
+    2700
+  ],
+  "baseline_set": "v4",
+  "checks": [
+    {
+      "type": "route_completed"
+    },
+    {
+      "type": "page_at",
+      "frame": 400,
+      "page": 4
+    },
+    {
+      "type": "image",
+      "capture": 400,
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "exact": true
+      }
+    },
+    {
+      "type": "image",
+      "capture": 1600,
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "exact": true
+      }
+    },
+    {
+      "type": "image",
+      "capture": 2700,
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "exact": true
+      }
+    },
+    {
+      "type": "image",
+      "capture": 400,
+      "against": "original-mesa-3840x1080",
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "expect_change": true
+      }
+    },
+    {
+      "type": "image",
+      "capture": 1600,
+      "against": "original-mesa-3840x1080",
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "expect_change": true
+      }
+    },
+    {
+      "type": "image",
+      "capture": 2700,
+      "against": "original-mesa-3840x1080",
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "expect_change": true
+      }
+    }
+  ]
+}

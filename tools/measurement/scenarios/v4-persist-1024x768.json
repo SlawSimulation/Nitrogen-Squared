@@ -1,0 +1,231 @@
+{
+  "id": "v4-persist-1024x768",
+  "description": "Settings changed mid-game as F1 changes them are saved, and a restart from the saved file renders exactly like the same settings set before launch.",
+  "renderer": "mesa",
+  "window": {
+    "mode": "windowed",
+    "width": 1024,
+    "height": 768
+  },
+  "options": {},
+  "route": "default",
+  "capture_kind": "present",
+  "captures": [
+    400,
+    1600,
+    2700
+  ],
+  "baseline_set": "v4",
+  "checks": [
+    {
+      "type": "route_completed"
+    },
+    {
+      "type": "page_at",
+      "frame": 400,
+      "page": 4
+    },
+    {
+      "type": "image",
+      "capture": 400,
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "exact": true
+      }
+    },
+    {
+      "type": "image",
+      "capture": 1600,
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "exact": true
+      }
+    },
+    {
+      "type": "image",
+      "capture": 2700,
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "exact": true
+      }
+    },
+    {
+      "type": "image",
+      "capture": 400,
+      "against": "original-mesa-1024x768",
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "expect_change": true
+      }
+    },
+    {
+      "type": "image",
+      "capture": 1600,
+      "against": "original-mesa-1024x768",
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "expect_change": true
+      }
+    },
+    {
+      "type": "image",
+      "capture": 2700,
+      "against": "original-mesa-1024x768",
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "expect_change": true
+      }
+    },
+    {
+      "type": "options_saved",
+      "values": {
+        "texture_filter": 1,
+        "scanlines": 40
+      }
+    }
+  ],
+  "set_options_at": [
+    [
+      300,
+      "texture_filter",
+      1
+    ],
+    [
+      300,
+      "scanlines",
+      40
+    ]
+  ],
+  "restart": {
+    "checks": [
+      {
+        "type": "route_completed"
+      },
+      {
+        "type": "page_at",
+        "frame": 400,
+        "page": 4
+      },
+      {
+        "type": "image",
+        "capture": 400,
+        "against": "v4-expected-smooth-scanlines-1024x768",
+        "against_set": "v4",
+        "regions": [
+          {
+            "name": "whole",
+            "rect": [
+              0,
+              0,
+              1,
+              1
+            ]
+          }
+        ],
+        "tolerance": {
+          "exact": true
+        }
+      },
+      {
+        "type": "image",
+        "capture": 1600,
+        "against": "v4-expected-smooth-scanlines-1024x768",
+        "against_set": "v4",
+        "regions": [
+          {
+            "name": "whole",
+            "rect": [
+              0,
+              0,
+              1,
+              1
+            ]
+          }
+        ],
+        "tolerance": {
+          "exact": true
+        }
+      },
+      {
+        "type": "image",
+        "capture": 2700,
+        "against": "v4-expected-smooth-scanlines-1024x768",
+        "against_set": "v4",
+        "regions": [
+          {
+            "name": "whole",
+            "rect": [
+              0,
+              0,
+              1,
+              1
+            ]
+          }
+        ],
+        "tolerance": {
+          "exact": true
+        }
+      }
+    ]
+  }
+}

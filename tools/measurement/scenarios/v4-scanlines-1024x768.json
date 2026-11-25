@@ -1,0 +1,142 @@
+{
+  "id": "v4-scanlines-1024x768",
+  "description": "V4-b Scanlines at 50%: the presented picture must change.",
+  "renderer": "mesa",
+  "window": {
+    "mode": "windowed",
+    "width": 1024,
+    "height": 768
+  },
+  "options": {
+    "scanlines": 50
+  },
+  "route": "default",
+  "capture_kind": "present",
+  "captures": [
+    400,
+    1600,
+    2700
+  ],
+  "baseline_set": "v4",
+  "checks": [
+    {
+      "type": "route_completed"
+    },
+    {
+      "type": "page_at",
+      "frame": 400,
+      "page": 4
+    },
+    {
+      "type": "image",
+      "capture": 400,
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "exact": true
+      }
+    },
+    {
+      "type": "image",
+      "capture": 1600,
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "exact": true
+      }
+    },
+    {
+      "type": "image",
+      "capture": 2700,
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "exact": true
+      }
+    },
+    {
+      "type": "image",
+      "capture": 400,
+      "against": "original-mesa-1024x768",
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "expect_change": true
+      }
+    },
+    {
+      "type": "image",
+      "capture": 1600,
+      "against": "original-mesa-1024x768",
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "expect_change": true
+      }
+    },
+    {
+      "type": "image",
+      "capture": 2700,
+      "against": "original-mesa-1024x768",
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "expect_change": true
+      }
+    }
+  ]
+}

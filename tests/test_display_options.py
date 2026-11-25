@@ -518,6 +518,96 @@ int main(int,char**argv){
         self.assertIn('ImGui::SeparatorText("Picture");', menu)
 
 
+FRAMEWORK = ROOT / '.local' / 'psxrecomp'
+
+
+@unittest.skipUnless(COMPILER, 'C++ compiler required for display fixtures')
+class ColourModelTests(unittest.TestCase):
+    """V4-b colour models run on the GPU; they must match the framework's own model."""
+
+    def models(self):
+        host = (ROOT / 'compat' / 'runtime_host.cpp').read_text(encoding='utf-8')
+        body = host[host.index('nitrogen_colour_models[] = {'):]
+        body = body[:body.index('};')]
+        numbers = [float(x) for x in re.findall(r'-?\d+\.\d+', body)]
+        self.assertEqual(len(numbers), 3 * 12)
+        return [numbers[i * 12:(i + 1) * 12] for i in range(3)]
+
+    @unittest.skipUnless((FRAMEWORK / 'runtime' / 'src' / 'color_lut.c').is_file(),
+                         'pinned framework checkout not present')
+    def test_gpu_formula_matches_the_framework_lut_for_every_15_bit_colour(self):
+        rows = ',\n'.join('{' + ','.join(repr(v) for v in m) + '}' for m in self.models())
+        source = r"""
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+extern "C" {
+#include "color_lut.h"
+}
+static const double M[3][12] = {
+""" + rows + r"""
+};
+// The shader in compat/runtime_host.cpp, evaluated in single precision as the GPU does.
+static float oetf(float v){ return v <= 0.0031308f ? 12.92f * v : 1.055f * std::pow(v, 1.0f / 2.4f) - 0.055f; }
+int main(){
+ const ScreenKind kinds[3] = {SCREEN_CRT, SCREEN_COMPOSITE, SCREEN_TRINITRON};
+ int worst = 0; long total = 0, count = 0;
+ for (int k = 0; k < 3; ++k) {
+  ColorSettings s; s.screen = kinds[k]; s.darken = -1.0; s.target = DISPLAY_SRGB;
+  ColorLut *lut = color_lut_create(&s);
+  for (int px = 0; px < 32768; ++px) {
+   uint8_t ref[3]; color_lut_map555(lut, (uint16_t)px, &ref[0], &ref[1], &ref[2]);
+   const int q[3] = {px & 31, (px >> 5) & 31, (px >> 10) & 31};
+   float c[3], lin[3];
+   for (int i = 0; i < 3; ++i) {   // the presented 8-bit value of a 5-bit channel
+    c[i] = (float)((q[i] << 3) | (q[i] >> 2)) / 255.0f;
+    lin[i] = std::fmin(std::pow(c[i], (float)M[k][0]) * (float)M[k][1], 1.0f);
+   }
+   for (int r = 0; r < 3; ++r) {
+    float d = (float)M[k][3 + r * 3] * lin[0] + (float)M[k][4 + r * 3] * lin[1] + (float)M[k][5 + r * 3] * lin[2];
+    d = std::fmin(std::fmax(d, 0.0f), 1.0f);
+    const float v = (float)M[k][2] + (1.0f - (float)M[k][2]) * d;
+    const int out = (int)std::lround(oetf(v) * 255.0f);
+    const int diff = std::abs(out - ref[r]);
+    if (diff > worst) worst = diff;
+    total += diff; ++count;
+   }
+  }
+  color_lut_destroy(lut);
+ }
+ std::printf("max %d mean %.4f\n", worst, (double)total / count);
+ // The GPU sees the presented 8-bit value; the CPU table indexes 5-bit colour
+ // (q/31). That input difference, not the model, bounds the agreement.
+ return worst <= 3 && (double)total / count <= 0.5 ? 0 : 1;
+}
+"""
+        with tempfile.TemporaryDirectory() as temp:
+            fixture = Path(temp) / 'colour.cpp'
+            fixture.write_text(source)
+            lut_c = Path(temp) / 'color_lut.c'          # compiled privately; the checkout is not modified
+            lut_c.write_bytes((FRAMEWORK / 'runtime' / 'src' / 'color_lut.c').read_bytes())
+            include = ['-I', str(FRAMEWORK / 'runtime' / 'include')]
+            built = subprocess.run(['c++', '-x', 'c', '-std=c11', '-c', str(lut_c), *include,
+                                    '-o', str(Path(temp) / 'color_lut.o')], capture_output=True, text=True)
+            self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
+            built = subprocess.run(['c++', '-std=c++17', str(fixture), str(Path(temp) / 'color_lut.o'), *include,
+                                    '-o', str(Path(temp) / 'colour')], capture_output=True, text=True)
+            self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
+            ran = subprocess.run([str(Path(temp) / 'colour')], capture_output=True, text=True)
+            self.assertEqual(ran.returncode, 0, f'difference from the framework model: {ran.stdout.strip()} levels')
+
+    def test_host_loads_the_colour_pass_only_on_change_and_restores_the_original(self):
+        host = (ROOT / 'compat' / 'runtime_host.cpp').read_text(encoding='utf-8')
+        update = host[host.index('static void nitrogen_window_update()\n{'):]
+        update = update[:update.index('\n}\n')]
+        guard = update.index('if (screen != applied_screen)')
+        self.assertLess(guard, update.index('gl_renderer_set_post_shader('))
+        self.assertIn('startup_post_shader = g_video_post_shader;', update)
+        self.assertNotIn('gpu_set_screen_kind(', update)      # never converted twice
+        self.assertIn('"nitrogen-picture"', host)            # private, beside the executable
+        self.assertEqual(len(self.models()), 3)
+
+
 class SettingsParityTests(unittest.TestCase):
     """V1.2: the in-game Video menu and F1 Settings offer the same six options."""
     LABELS = {'NITROGEN_VIDEO_MODE': 'Window mode', 'NITROGEN_HUD_SCALE': 'HUD scale',

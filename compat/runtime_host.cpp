@@ -55,6 +55,65 @@ static void nitrogen_exclusive_refresh_env(float hz)
     if (*text) setenv("PSX_EXCLUSIVE_REFRESH_HZ", text, 1); else unsetenv("PSX_EXCLUSIVE_REFRESH_HZ");
 #endif
 }
+// V4-b colour models on the OpenGL path. The framework's screen-colour LUT is
+// applied only where the CPU converts 15-bit scanout; the OpenGL presentation
+// never reaches it (measured: no pixel changed). This pass applies the same
+// colorimetry on the GPU through the framework's post-effect chain: per
+// channel gamma and luminance, the phosphor-to-sRGB matrix, the black lift
+// and the sRGB curve. Constants come from the pinned framework's own model
+// (runtime/src/color_lut.c, panel_model + rgb_to_rgb to sRGB).
+static const char *const nitrogen_colour_glsl =
+    "void main(){\n"
+    "  vec3 c = clamp(texelFetch(u_src, ivec2(gl_FragCoord.xy) - u_org, 0).rgb, 0.0, 1.0);\n"
+    "  vec3 lin = min(pow(c, vec3(u_model.x)) * u_model.y, vec3(1.0));\n"
+    "  vec3 d = clamp(vec3(dot(u_row0, lin), dot(u_row1, lin), dot(u_row2, lin)), 0.0, 1.0);\n"
+    "  vec3 v = u_model.z + (1.0 - u_model.z) * d;\n"
+    "  vec3 lo = 12.92 * v, hi = 1.055 * pow(v, vec3(1.0 / 2.4)) - 0.055;\n"
+    "  o = vec4(mix(hi, lo, vec3(lessThanEqual(v, vec3(0.0031308)))), 1.0);\n"
+    "}\n";
+struct NitrogenColourModel { const char *name; double gamma, luminance, black, m[3][3]; };
+static const NitrogenColourModel nitrogen_colour_models[] = {
+    {"crt", 2.4, 0.92, 0.004, {{0.939542064, 0.050181357, 0.010276579},
+                               {0.017772223, 0.965792862, 0.016434914},
+                               {-0.001621600, -0.004369750, 1.005991350}}},
+    {"composite", 2.5, 0.90, 0.012, {{0.939542064, 0.050181357, 0.010276579},
+                                     {0.017772223, 0.965792862, 0.016434914},
+                                     {-0.001621600, -0.004369750, 1.005991350}}},
+    {"trinitron", 2.35, 0.95, 0.002, {{1.068715855, -0.078609696, 0.009893841},
+                                      {0.024106255, 0.960070928, 0.015822817},
+                                      {0.001734353, 0.029741144, 0.968524502}}},
+};
+// Writes the shader and preset privately beside the executable (inside the
+// portable folder) and returns the preset path, or "" when unavailable.
+static std::string nitrogen_colour_preset(int screen)
+{
+    if (screen < NITROGEN_SCREEN_CRT || screen > NITROGEN_SCREEN_TRINITRON) return "";
+    const NitrogenColourModel &m = nitrogen_colour_models[screen - NITROGEN_SCREEN_CRT];
+    const char *base = SDL_GetBasePath();
+    if (!base) return "";
+    const std::filesystem::path dir = std::filesystem::u8path(std::string(base)) / "nitrogen-picture";
+    std::error_code error;
+    std::filesystem::create_directories(dir, error);
+    char preset[768];
+    std::snprintf(preset, sizeof(preset),
+                  "pfx 1\npass colour_model\n  shader nitrogen-colour-model.glsl\n  input u_src source\n"
+                  "  uniform u_model %.9f %.9f %.9f 0\n  uniform u_row0 %.9f %.9f %.9f\n"
+                  "  uniform u_row1 %.9f %.9f %.9f\n  uniform u_row2 %.9f %.9f %.9f\n",
+                  m.gamma, m.luminance, m.black, m.m[0][0], m.m[0][1], m.m[0][2],
+                  m.m[1][0], m.m[1][1], m.m[1][2], m.m[2][0], m.m[2][1], m.m[2][2]);
+    const std::filesystem::path pfx = dir / (std::string("colour-") + m.name + ".pfx");
+    for (const auto &[path, text] : {std::pair<std::filesystem::path, std::string>{dir / "nitrogen-colour-model.glsl",
+                                                                                   nitrogen_colour_glsl},
+                                     std::pair<std::filesystem::path, std::string>{pfx, preset}}) {
+        std::ifstream in(path, std::ios::binary);
+        const std::string current((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        if (current == text) continue;
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        out << text;
+        if (!out) return "";
+    }
+    return pfx.u8string();
+}
 static void nitrogen_window_update()
 {
     if(nitrogen_window_take_close()) {
@@ -143,14 +202,15 @@ static void nitrogen_window_update()
     // V4-b: each Picture setting is applied only when it changes. "Original"
     // restores the framework's own startup value, so defaults never touch it.
     static bool picture_ready = false;
-    static int startup_dither = 1, startup_screen = 0, startup_scan_on = 0;
+    static int startup_dither = 1, startup_scan_on = 0;
+    static std::string startup_post_shader;
     static float startup_scan_strength = .5f, startup_gamma = 1.f;
     static int applied_dither = NITROGEN_DITHER_ORIGINAL, applied_screen = NITROGEN_SCREEN_ORIGINAL;
     static int applied_scan = 0, applied_bright = 100;
     if (!picture_ready) {
         picture_ready = true;
         startup_dither = gl_renderer_dithering();
-        startup_screen = g_video_screen;
+        startup_post_shader = g_video_post_shader;
         startup_scan_on = gl_renderer_get_scanlines(&startup_scan_strength);
         startup_gamma = gl_renderer_get_post_gamma();
     }
@@ -161,7 +221,11 @@ static void nitrogen_window_update()
     }
     const int screen = nitrogen_option_get(NITROGEN_SCREEN_MODEL);
     if (screen != applied_screen) {
-        gpu_set_screen_kind(screen == NITROGEN_SCREEN_ORIGINAL ? startup_screen : screen);
+        // The colour pass uses the framework's post-effect chain; Original
+        // restores the game's own configured chain (normally none).
+        const std::string preset = nitrogen_colour_preset(screen);
+        gl_renderer_set_post_shader(screen == NITROGEN_SCREEN_ORIGINAL || preset.empty()
+                                    ? startup_post_shader.c_str() : preset.c_str());
         applied_screen = screen;
     }
     const int scan = nitrogen_option_get(NITROGEN_SCANLINES);
