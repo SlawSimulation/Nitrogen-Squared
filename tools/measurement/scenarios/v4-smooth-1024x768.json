@@ -1,6 +1,6 @@
 {
   "id": "v4-smooth-1024x768",
-  "description": "V4-a Smooth textures: the 3D world changes; HUD and menus must stay identical to the original.",
+  "description": "V4-a Smooth textures: the 3D world changes; the HUD's own pixels (world-hidden HUD layer and opaque HUD pixels, render worker off) stay identical to the original. Translucent HUD pixels change only where the smoothed world shows through them; they are reported, not gated.",
   "renderer": "mesa",
   "window": {
     "mode": "windowed",
@@ -124,46 +124,22 @@
       }
     },
     {
-      "type": "image",
+      "type": "hud_sharp",
       "capture": 400,
       "against": "original-mesa-1024x768",
-      "regions": [
-        {
-          "name": "hud",
-          "mask": "ui"
-        }
-      ],
-      "tolerance": {
-        "exact": true
-      }
+      "against_set": "original"
     },
     {
-      "type": "image",
+      "type": "hud_sharp",
       "capture": 1600,
       "against": "original-mesa-1024x768",
-      "regions": [
-        {
-          "name": "hud",
-          "mask": "ui"
-        }
-      ],
-      "tolerance": {
-        "exact": true
-      }
+      "against_set": "original"
     },
     {
-      "type": "image",
+      "type": "hud_sharp",
       "capture": 2700,
       "against": "original-mesa-1024x768",
-      "regions": [
-        {
-          "name": "hud",
-          "mask": "ui"
-        }
-      ],
-      "tolerance": {
-        "exact": true
-      }
+      "against_set": "original"
     }
   ]
 }

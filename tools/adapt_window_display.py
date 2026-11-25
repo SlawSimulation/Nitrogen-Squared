@@ -62,10 +62,10 @@ def adapt_renderer(text):
     if (flags & 0x10u) {
         const float shift = g_wide_cur ? s_shift_hi : s_shift_hr;
         *x -= shift; *y -= shift; /* UI targets physical pixel boundaries. */
-        /* Test-only HUD masks: collapse the primitive off screen. Every VRAM
-         * sync, batch and state step still runs, so the world is unchanged. */
-        if (nitrogen_world_skip(flags)) { *x = -1.0e6f; *y = -1.0e6f; }
     }
+    /* Test-only HUD masks and HUD-only layers: collapse the primitive off
+     * screen. Every VRAM sync, batch and state step still runs. */
+    if (nitrogen_world_skip(flags)) { *x = -1.0e6f; *y = -1.0e6f; }
 }
 static void nitrogen_ui_vertex(float *x, float *y) {
     nitrogen_ui_vertex_flags(x, y, rth_replaying() ? nitrogen_replay_ui : nitrogen_gpu_ui_flags());

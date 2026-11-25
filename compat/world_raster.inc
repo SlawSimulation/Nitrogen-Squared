@@ -91,18 +91,46 @@ static void nitrogen_bind_framebuffer(GLenum target,GLuint framebuffer)
  * above use the original pointer and therefore cannot recurse into the fence. */
 #define p_glBindFramebuffer nitrogen_bind_framebuffer
 
-/* Test-only (measurement fixture): collapse every primitive Nitrogen tags as
- * HUD or menu off screen (in nitrogen_ui_vertex_flags), so a second render of
- * the same deterministic frame yields the exact UI mask by difference. Every
+/* Test-only (measurement fixture). Bit 0 collapses every primitive Nitrogen
+ * tags as HUD or menu off screen (in nitrogen_ui_vertex_flags), so a second
+ * render of the same deterministic frame yields the exact UI mask by
+ * difference. Bit 1 collapses everything else instead, leaving the HUD's own
+ * contribution. The game never clears its draw buffer (the tunnel covers it),
+ * so a world-hidden frame first clears the draw area to black; otherwise the
+ * buffer would still hold the world drawn there two frames earlier. Every
  * VRAM sync and batch step still runs. Always 0 in normal play. */
-static volatile int nitrogen_test_ui_hidden;
-void nitrogen_test_hide_ui(int on) { nitrogen_test_ui_hidden = on != 0; }
+static volatile int nitrogen_test_layers_hidden, nitrogen_test_layer_clear;
+void nitrogen_test_hide_ui(int mode)
+{
+    if ((mode & 2) && !(nitrogen_test_layers_hidden & 2)) nitrogen_test_layer_clear = 1;
+    nitrogen_test_layers_hidden = mode & 3;
+}
 static int nitrogen_world_skip(unsigned flags)
 {
-    return nitrogen_test_ui_hidden && (flags&0x10u);
+    return (nitrogen_test_layers_hidden & ((flags&0x10u) ? 1 : 2)) != 0;
+}
+static void nitrogen_test_clear_draw_area(void)
+{
+    GLfloat previous[4];
+    flush_tex_batch(); flush_flat_batch();
+    nitrogen_world_resolve();
+    glGetFloatv(GL_COLOR_CLEAR_VALUE, previous);
+    p_glBindFramebuffer(PSXGL_FRAMEBUFFER, s_hr_fbo);
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(s_area_x1 * s_hr_scale, s_area_y1 * s_hr_scale,
+              (s_area_x2 - s_area_x1 + 1) * s_hr_scale, (s_area_y2 - s_area_y1 + 1) * s_hr_scale);
+    glClearColor(0.f, 0.f, 0.f, 1.f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glClearColor(previous[0], previous[1], previous[2], previous[3]);
+    glDisable(GL_SCISSOR_TEST);
+    p_glBindFramebuffer(PSXGL_FRAMEBUFFER, 0);
 }
 static void nitrogen_world_select(unsigned flags)
 {
+    if (nitrogen_test_layer_clear && (nitrogen_test_layers_hidden & 2)) {
+        nitrogen_test_layer_clear = 0;
+        nitrogen_test_clear_draw_area();
+    }
     const int world=(flags&0x10u)==0;
     if(world==nitrogen_world_selected) return;
     flush_tex_batch(); flush_flat_batch();

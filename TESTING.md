@@ -20,9 +20,10 @@ software rendering (Mesa llvmpipe): the original look stays pixel-identical at
 at 21:9 and 32:9, Reset restores the original exactly, and a change made
 mid-game is saved and survives a restart. Software rendering is not your GPU,
 so an optional final look on your PC is listed below (check N2-DISPLAY-V4).
-Known: under Smooth, the 3D weapon model shown inside the weapon gauge is
-smoothed too (it is 3D, not HUD); semi-transparent HUD parts show the
-smoothed world behind them.
+Under Smooth the HUD itself stays sharp and unchanged, including the 3D weapon
+model inside the weapon gauge (an earlier note saying it was smoothed was
+wrong). Semi-transparent HUD parts, such as the gauge glass, still show the
+smoothed world behind them; that is expected.
 
 Optional check on your PC (check N2-DISPLAY-V4):
 1. Install the V4 candidate in your test copy and let it rebuild once.

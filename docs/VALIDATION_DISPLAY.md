@@ -37,13 +37,37 @@ further change shows Custom. Reset to original applies the Original preset.
   executables; OpenGL 4.6 Core; deterministic: repeated runs are byte-identical.
 - `tools/measurement/n2test.py` runs real-game scenarios (18 files) and labels
   evidence; captures and baselines are private in `.local`.
-- HUD masks: a test-only switch collapses primitives Nitrogen tags as HUD or
-  menu off screen (an early return first skipped the renderer's VRAM sync and
-  changed later world texels by one colour step; masks covered 81% of the
-  screen). Masks come from two render-worker-off runs, with the HUD hidden only
-  in the drawn frame (two frame hooks before presentation, measured). 1024x768
-  masks cover 24,368-26,220 pixels: score, coins, lives, high-score bar,
-  weapon gauge, ammo and the paused caption.
+- HUD comparison (`hud_sharp`). A test-only switch in the adapted renderer
+  collapses either the primitives Nitrogen tags as HUD/menu (bit 0) or every
+  other primitive (bit 1) off screen; every VRAM sync and batch step still runs
+  (an early return first skipped the VRAM sync and changed later world texels
+  by one colour step). It is always off in normal play. The layer is hidden
+  only in the drawn frame (two frame hooks before presentation, measured).
+  All HUD runs use the render worker OFF: with it on, captures at frames 400
+  and 1600 show the game frame one step earlier than worker-off captures do,
+  so the first masks (worker-off) were misaligned with the worker-on images.
+  That misalignment, plus translucent glass, caused the earlier wrong
+  conclusion that Smooth blurred the weapon model.
+  For a reference scenario, `--make-masks` records four private files per
+  capture: the composite (`hudref`), the HUD alone over a cleared frame
+  (`hudlayer`; the game never clears its draw buffer, so the world-hidden
+  frame clears the draw area to black first, otherwise it would still hold the
+  world from two frames earlier), the world alone (`hudworld`) and the mask
+  (where composite and world differ, grown by one pixel). The check then:
+  1. requires the HUD layer to be byte-identical over the whole frame;
+  2. requires proven opaque HUD pixels to be byte-identical in the composite.
+     Opaque means inside the mask, the composite equal to the HUD layer and
+     different from the world behind it;
+  3. reports, without gating, translucent pixels (composite differs from the
+     layer: the world shows through) and ambiguous pixels (composite, layer and
+     world all equal). Ambiguous pixels are in practice black HUD over black
+     world, mostly at the one-pixel mask edge: black composited over black
+     looks the same whether the HUD covers the pixel or not, so the reference
+     cannot establish opacity there. Counting them as opaque would test the
+     world, not the HUD.
+  "HUD" means primitives Nitrogen tags as HUD/menu. A few untagged effect
+  quads drawn above the HUD (mid-screen pause effects) follow the world filter;
+  untagged 2D rectangles keep nearest sampling anyway.
 
 ### Results (software-rendered, Mesa llvmpipe; not GPU-representative)
 
@@ -55,9 +79,11 @@ further change shows Custom. Reset to original applies the Original preset.
 | Reset to original mid-game | byte-identical to the original at every later capture; original values saved |
 | Persistence | a mid-game F1-equivalent change is saved and a real restart from that file renders byte-identically to the same settings set before launch |
 | Determinism | every V4 scenario re-run matches its recorded baseline exactly |
-| Smooth keeps the HUD identical | not verified: 1,547-2,332 HUD-mask pixels change. Semi-transparent HUD parts show the smoothed world, and the 3D weapon model inside the weapon gauge is smoothed (it is not tagged HUD). Owner decision pending |
+| Smooth keeps the HUD identical (frames 400/1600/2700, against the original) | pass. HUD layer byte-identical over the whole frame at all three. Proven opaque HUD pixels byte-identical: 17,548 / 19,723 / 18,118, i.e. 71.9% / 75.2% / 74.4% of the 24,408 / 26,220 / 24,368 mask pixels. Translucent (reported): 1,568 of 6,846 / 2,289 of 6,476 / 1,721 of 6,250 changed, max 32 / 192 / 32 levels, all from the smoothed world behind the glass. Ambiguous (reported): 14 / 21 / 0 pixels (0.06% / 0.08% / 0%), of which 2 / 7 / 0 changed by at most 8 / 24 levels |
+| Weapon model under Smooth | sharp: it is drawn at ranks 427/428 inside the gauge and already tagged HUD, so it keeps nearest sampling; it is byte-identical in the HUD layer. The earlier note that it was smoothed was wrong (misaligned worker-on/off masks plus translucent glass); no rendering change was made |
+| HUD reference reproducibility | re-recording the original 1024x768 references reproduced all 12 existing files byte-for-byte; only the new world images were added |
 | Dithering and the HUD | the PS1 dithers HUD primitives too, so those scenarios compare the world only |
-| Unit tests | 291 run; only the 7 pre-existing test_portable git errors; source audit passes |
+| Unit tests | 298 run, 32 skipped; only the 7 pre-existing test_portable git-fixture errors (also present without these changes); source audit passes (239 files) |
 
 Not tested here: the owner's GPU and monitor (real colour, scanline moiré at
 32:9, performance). Software-rendered timings are not meaningful. Optional

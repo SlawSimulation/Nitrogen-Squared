@@ -175,6 +175,96 @@ class MaskTests(unittest.TestCase):
         self.assertIn("| not tested |", text)
 
 
+def write_present(path, img):
+    """Write a top-down test image as a bottom-up present capture."""
+    w, h, ch, px = img
+    rows = [bytes(px[y * w * ch:(y + 1) * w * ch]) for y in range(h)]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(struct.pack("<4I", 0x5741524E, w, h, ch) + b"".join(reversed(rows)))
+
+
+class HudSharpTests(unittest.TestCase):
+    """hud_sharp: the HUD's own layer and its opaque pixels are exact; translucent
+    and ambiguous HUD pixels may change only because the world behind them changed."""
+
+    def build(self, world=(40, 90, 40), hud_layer_pixel=(250, 250, 250), dark=(0, 0, 0)):
+        composite, layer, behind = image(64, 48, world), image(64, 48, (0, 0, 0)), image(64, 48, world)
+        for x in range(4, 20):                  # opaque HUD bar
+            for y in range(2, 6):
+                paint(composite, x, y, (250, 250, 250))
+                paint(layer, x, y, hud_layer_pixel if (x, y) == (10, 3) else (250, 250, 250))
+        for x in range(30, 34):                 # translucent HUD panel: half world, half HUD
+            paint(layer, x, 10, (60, 60, 60))
+            paint(composite, x, 10, tuple(min(255, c // 2 + 60) for c in world))
+        paint(behind, 3, 3, (0, 0, 0))          # black world beside the bar, inside the grown mask:
+        paint(composite, 3, 3, dark)            # black HUD over black world proves nothing
+        return composite, layer, behind
+
+    def run_check(self, now_composite, now_layer):
+        ref_composite, ref_layer, behind = self.build()
+        with tempfile.TemporaryDirectory() as temp:
+            out, base = Path(temp) / "out", Path(temp) / "base"
+            paths = n2test.hud_paths(base, "original", "mesa", "ref", 400)
+            write_present(paths["ref"], ref_composite)
+            write_present(paths["layer"], ref_layer)
+            write_present(paths["world"], behind)
+            mask = n2test.make_mask(frozen(ref_composite), frozen(behind), grow=1)
+            n2test.save_mask(paths["mask"], 64, 48, mask)
+            write_present(out / "runs" / "t1-hud-ref" / "present-400.raw", now_composite)
+            write_present(out / "runs" / "t1-hud-layer" / "present-400.raw", now_layer)
+            return n2test.hud_sharp(scenario(), dict(type="hud_sharp", capture=400, against="ref",
+                                                     against_set="original"), out, base)
+
+    def test_world_change_behind_translucent_hud_is_reported_not_failed(self):
+        composite, layer, _ = self.build(world=(44, 96, 44))   # the world is smoothed
+        result = self.run_check(composite, layer)
+        self.assertIs(result["passed"], True)
+        self.assertGreaterEqual(result["translucent"]["changed"], 4)
+        self.assertIn("translucent HUD pixels", result["detail"])
+
+    def test_world_change_behind_black_over_black_is_ambiguous_not_failed(self):
+        composite, layer, _ = self.build(dark=(8, 8, 0))       # smoothing tints the black world
+        result = self.run_check(composite, layer)
+        self.assertIs(result["passed"], True)
+        self.assertEqual(result["regions"][1]["changed"], 0)
+        self.assertEqual((result["ambiguous"]["pixels"], result["ambiguous"]["changed"]), (1, 1))
+
+    def test_a_changed_hud_layer_fails(self):
+        composite, layer, _ = self.build(hud_layer_pixel=(240, 240, 240))  # the HUD texture itself changed
+        result = self.run_check(composite, layer)
+        self.assertIs(result["passed"], False)
+        self.assertFalse(result["regions"][0]["passed"])
+
+    def test_a_changed_opaque_hud_pixel_fails(self):
+        composite, layer, _ = self.build()
+        paint(composite, 12, 4, (200, 200, 200))
+        result = self.run_check(composite, layer)
+        self.assertIs(result["passed"], False)
+        self.assertEqual(result["regions"][1]["changed"], 1)
+
+    def test_classes_separate_opaque_translucent_and_ambiguous(self):
+        composite, layer, behind = self.build()
+        mask = n2test.make_mask(frozen(composite), frozen(behind), grow=0)
+        classes = n2test.hud_classes(mask, frozen(composite), frozen(layer), frozen(behind))
+        self.assertEqual([classes.count(k) for k in (n2test.OPAQUE, n2test.TRANSLUCENT, n2test.AMBIGUOUS)],
+                         [16 * 4, 4, 0])
+        grown = n2test.make_mask(frozen(composite), frozen(behind), grow=1)
+        classes = n2test.hud_classes(grown, frozen(composite), frozen(layer), frozen(behind))
+        self.assertEqual(classes[3 * 64 + 3], n2test.AMBIGUOUS)   # black over black
+        self.assertEqual(classes.count(n2test.OPAQUE), 16 * 4)
+
+    def test_missing_references_are_not_tested(self):
+        with tempfile.TemporaryDirectory() as temp:
+            result = n2test.hud_sharp(scenario(), dict(type="hud_sharp", capture=400, against="ref"),
+                                      Path(temp), Path(temp))
+        self.assertIsNone(result["passed"])
+        self.assertIn("run --make-masks for ref", result["detail"])
+
+    def test_hud_sharp_validates(self):
+        self.assertEqual(n2test.validate(scenario(checks=[dict(type="hud_sharp", capture=400, against="a")])), [])
+        self.assertTrue(n2test.validate(scenario(checks=[dict(type="hud_sharp", capture=401)])))
+
+
 class ScenarioActionTests(unittest.TestCase):
     """Mid-run settings, presets, saved options, restarts and must-change checks."""
 
