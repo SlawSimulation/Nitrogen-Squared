@@ -100,6 +100,75 @@ class ComparisonTests(unittest.TestCase):
             self.assertEqual(n2test.read_image(raw, False)[3][:6], rows[0])
 
 
+class MaskTests(unittest.TestCase):
+    """UI masks come from a frame drawn with and without Nitrogen's HUD/menu primitives."""
+
+    def frames(self):
+        world = image(64, 48, (40, 90, 40))
+        with_ui = image(64, 48, (40, 90, 40))
+        for x in range(4, 20):                 # an opaque HUD bar, rows 2-5
+            for y in range(2, 6):
+                paint(with_ui, x, y, (250, 250, 250))
+        return frozen(with_ui), frozen(world)
+
+    def test_mask_marks_ui_pixels_and_grows_their_edges(self):
+        with_ui, without = self.frames()
+        core = n2test.make_mask(with_ui, without, grow=0)
+        self.assertEqual(core.count(1), 16 * 4)
+        grown = n2test.make_mask(with_ui, without, grow=1)
+        self.assertEqual(grown.count(1), 18 * 6)
+        self.assertEqual(grown[1 * 64 + 3], 1)          # diagonal neighbour included
+        self.assertEqual(grown[0 * 64 + 3], 0)
+
+    def test_mask_round_trip_and_rejects_corruption(self):
+        with_ui, without = self.frames()
+        mask = n2test.make_mask(with_ui, without)
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "a" / "present-400.uimask"
+            n2test.save_mask(path, 64, 48, mask)
+            self.assertEqual(n2test.load_mask(path), (64, 48, mask))
+            path.write_bytes(b"XXXX" + path.read_bytes()[4:])
+            with self.assertRaises(ValueError):
+                n2test.load_mask(path)
+
+    def test_ui_and_world_regions_are_judged_separately(self):
+        with_ui, without = self.frames()
+        mask = n2test.make_mask(with_ui, without)
+        smoothed = image(64, 48, (40, 90, 40))
+        for x in range(4, 20):
+            for y in range(2, 6):
+                paint(smoothed, x, y, (250, 250, 250))
+        for x in range(30, 60):                 # the world changes (smooth filtering)
+            paint(smoothed, x, 40, (44, 94, 44))
+        smoothed = frozen(smoothed)
+        ui = n2test.compare_region(smoothed, with_ui, [0, 0, 1, 1], mask=mask, want=1)
+        world = n2test.compare_region(smoothed, with_ui, [0, 0, 1, 1], mask=mask, want=0)
+        self.assertEqual((ui["pixels"], ui["changed"]), (mask.count(1), 0))
+        self.assertEqual((world["pixels"], world["changed"]), (64 * 48 - mask.count(1), 30))
+        self.assertTrue(n2test.within(ui, {"exact": True}))
+        self.assertFalse(n2test.within(world, {"exact": True}))
+        bad = n2test.compare_region(smoothed, with_ui, [0, 0, 1, 1], mask=mask[:-1], want=1)
+        self.assertTrue(bad["size_mismatch"])
+
+    def test_mask_regions_validate(self):
+        good = scenario(checks=[dict(type="image", capture=400, regions=[dict(name="hud", mask="ui"),
+                                                                         dict(name="world", mask="world")])])
+        self.assertEqual(n2test.validate(good), [])
+        bad = scenario(checks=[dict(type="image", capture=400, regions=[dict(name="x", mask="hud")])])
+        self.assertTrue(n2test.validate(bad))
+
+    def test_missing_mask_is_not_tested_not_passed(self):
+        result = dict(id="s", renderer="mesa", window=[64, 48], seconds=1.0, status="completed", passed=False,
+                      gl="", evidence=["not verified"],
+                      checks=[dict(type="image", capture=400, passed=None,
+                                   regions=[dict(name="hud", passed=None, pixels=0, changed=0, changed_ratio=0.0,
+                                                 mean_abs=0.0, max_abs=0, size_mismatch=False,
+                                                 detail="not tested: no UI mask (run --make-masks)")])])
+        text = n2test.markdown([result], "now")
+        self.assertIn("image 400 [hud]: not tested: no UI mask", text)
+        self.assertIn("| not tested |", text)
+
+
 class EvidenceTests(unittest.TestCase):
     def test_labels_never_overstate(self):
         mesa = "OpenGL context created (4.6 (Core Profile) Mesa 26.3.1; llvmpipe (LLVM 23.1.5, 256 bits))"

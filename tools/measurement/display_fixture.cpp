@@ -54,6 +54,8 @@ extern "C" int nitrogen_extras_snapshot(int *) __attribute__((weak));
 // V3 investigation (maintenance): the guest-visible half of widescreen, the
 // GTE projection squeeze, applied independently of the renderer.
 extern "C" void gte_set_display_aspect(int num, int den);
+// HUD-mask runs (maintenance): skip primitives Nitrogen tags as HUD or menu.
+extern "C" void nitrogen_test_hide_ui(int on) __attribute__((weak));
 extern "C" int nitrogen_option_get(int) __attribute__((weak));
 
 namespace {
@@ -116,6 +118,7 @@ struct Config {
     std::vector<ExtraRequest> extras_rel;  // maintenance: F1 game-extras requests
     int gte_aspect_num = 0, gte_aspect_den = 0;   // maintenance: projection squeeze
     std::vector<uint64_t> pgxp_stats_rel;  // maintenance: perspective-texture coverage counters
+    int hide_ui = 0;                       // maintenance: HUD-mask generation run
 } cfg;
 bool load_config() {
     const char *path = std::getenv("NITROGEN_MEASURE_CONFIG");
@@ -145,6 +148,7 @@ bool load_config() {
         else if (key == "capture_rel") { uint64_t f = 0; s >> f; cfg.captures_rel.push_back(f); }
         else if (key == "ram_dump_rel") { uint64_t f = 0; s >> f; cfg.ram_dumps_rel.push_back(f); }
         else if (key == "gte_aspect") s >> cfg.gte_aspect_num >> cfg.gte_aspect_den;
+        else if (key == "hide_ui") s >> cfg.hide_ui;
         else if (key == "pgxp_stats_rel") { uint64_t f = 0; s >> f; cfg.pgxp_stats_rel.push_back(f); }
         else if (key == "extra_rel") { Config::ExtraRequest r{}; s >> r.rel >> r.extra >> r.value; cfg.extras_rel.push_back(r); }
         else if (key == "scale_sample") { uint64_t f = 0; s >> f; cfg.scale_samples.push_back(f); }
@@ -691,6 +695,7 @@ extern "C" bool __wrap_SDL_PollEvent(SDL_Event *event) {
                 }
                 instrumented = 1;
             }
+        if (cfg.hide_ui && nitrogen_test_hide_ui) nitrogen_test_hide_ui(1);
         for (uint64_t f : cfg.pgxp_stats_rel)
             if (f == rel) {   // free-running totals; diff two samples for a window
                 uint64_t att = 0, arm = 0, off = 0, nosrc = 0, noz = 0;

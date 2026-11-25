@@ -115,8 +115,8 @@ class LauncherPresentationTests(unittest.TestCase):
 
     def test_build_candidate_has_the_reviewed_game_fingerprint(self):
         # Display V1 (4dc2fa4b… -> eb7c7f58…), V1.1 HUD position (-> 694e84a8…), V1.2 menu parity
-        # and game extras (-> 17f52b05…) V2 frame pacing (-> 2b8b9bfe…) and its 60 Hz correction change compiled inputs: one rebuild each.
-        self.assertEqual(input_fingerprint(ROOT),'35885323d9bdddaca1d8e16d6319e98af99d79c76d58880dadef4549caeea948')
+        # and game extras (-> 17f52b05…) V2 frame pacing (-> 2b8b9bfe…) its 60 Hz correction (-> 35885323…) and the test-only HUD-mask switch change compiled inputs: one rebuild each.
+        self.assertEqual(input_fingerprint(ROOT),'35346f6425d2ed9db0b3b2e995082ee30e1b2ea663ece07fec1bf4ce01e9de5a')
 
     def test_original_artwork_separate_from_text_and_complete_package(self):
         assets=launcher_assets(ROOT);text=collect(ROOT)

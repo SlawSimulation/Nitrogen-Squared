@@ -47,7 +47,9 @@ def adapt_renderer(text):
         '    nitrogen_world_fbo=nitrogen_world_tex=nitrogen_world_rb=0;\n'
         '    nitrogen_world_width=nitrogen_world_height=nitrogen_world_pending=0;\n')
     text = replace(text, '    /* PS1 dithering: texture-modulated polygons only (never raw texels or',
-        '    nitrogen_world_select(rth_replaying() ? nitrogen_replay_ui : nitrogen_gpu_ui_flags());\n'
+        '    const unsigned nitrogen_tri_ui = rth_replaying() ? nitrogen_replay_ui : nitrogen_gpu_ui_flags();\n'
+        '    nitrogen_world_select(nitrogen_tri_ui);\n'
+        '    if (nitrogen_world_skip(nitrogen_tri_ui)) return;\n'
         '    /* PS1 dithering: texture-modulated polygons only (never raw texels or')
     marker = 'static void gpu_geometry(GLenum mode, const int *xs, const int *ys,'
     helper = '''static void nitrogen_ui_vertex_flags(float *x, float *y, unsigned flags) {
@@ -78,7 +80,8 @@ static void nitrogen_ui_vertex(float *x, float *y) {
         '    const int precise = s_pc_valid && mode == GL_TRIANGLES && n == 3;\n'
         '    const unsigned nitrogen_geometry_ui = rth_replaying() ? nitrogen_replay_ui :\n'
         '        mode == GL_LINES && n == 2 ? nitrogen_gpu_line_flags(xs[0],ys[0],xs[1],ys[1]) : nitrogen_gpu_ui_flags();\n'
-        '    nitrogen_world_select(nitrogen_geometry_ui);')
+        '    nitrogen_world_select(nitrogen_geometry_ui);\n'
+        '    if (nitrogen_world_skip(nitrogen_geometry_ui)) return;')
     text = replace(text, '            v[1] = (float)ys[i];',
         '            v[1] = (float)ys[i];\n'
         '            nitrogen_ui_vertex_flags(&v[0], &v[1], nitrogen_geometry_ui);')

@@ -77,7 +77,12 @@ def validate(s: dict) -> list[str]:
             if c.get("capture") not in captures:
                 errors.append(f"image check capture {c.get('capture')} is not captured")
             for r in (c.get("regions") or []) + (c.get("ignore") or []):
-                rect = r.get("rect") if isinstance(r, dict) else None
+                if not isinstance(r, dict):
+                    errors.append("regions/ignore entries must be objects")
+                    continue
+                if r in (c.get("regions") or []) and r.get("mask") not in (None, "ui", "world"):
+                    errors.append("region mask must be ui or world")
+                rect = r.get("rect", [0, 0, 1, 1] if r.get("mask") else None)
                 if not (isinstance(rect, list) and len(rect) == 4 and 0 <= rect[0] < rect[2] <= 1
                         and 0 <= rect[1] < rect[3] <= 1):
                     errors.append("regions/ignore need rect [x0, y0, x1, y1] as fractions with x0<x1, y0<y1")
@@ -124,26 +129,33 @@ def _row_spans(x0: int, x1: int, y: int, ignore: list[tuple[int, int, int, int]]
     return spans
 
 
-def compare_region(a: tuple, b: tuple, rect: list[float], ignore: list[list[float]] | None = None) -> dict:
-    """a/b are (w, h, channels, top-down pixels). Colour channels only (alpha ignored)."""
+def compare_region(a: tuple, b: tuple, rect: list[float], ignore: list[list[float]] | None = None,
+                   mask: bytes | None = None, want: int = 1) -> dict:
+    """a/b are (w, h, channels, top-down pixels). Colour channels only (alpha ignored).
+    With a UI mask (one byte per pixel, 1 = HUD/menu), only pixels whose mask
+    value equals `want` count: want=1 compares the HUD, want=0 the world."""
     w, h, ch, pa = a
-    if (b[0], b[1]) != (w, h):
+    if (b[0], b[1]) != (w, h) or (mask is not None and len(mask) != w * h):
         return dict(pixels=0, changed=0, changed_ratio=1.0, mean_abs=255.0, max_abs=255, size_mismatch=True)
     chb, pb = b[2], b[3]
     x0, y0, x1, y1 = to_rect(rect, w, h)
     masks = [to_rect(r, w, h) for r in (ignore or [])]
     pixels = changed = total = biggest = 0
+    selector = bytes([want])
     for y in range(y0, y1):
         for sx0, sx1 in _row_spans(x0, x1, y, masks):
             n = sx1 - sx0
             if n <= 0:
                 continue
-            pixels += n
+            row_mask = mask[y * w + sx0:y * w + sx1] if mask is not None else None
+            pixels += n if row_mask is None else row_mask.count(selector)
             ra = pa[(y * w + sx0) * ch:(y * w + sx1) * ch]
             rb = pb[(y * w + sx0) * chb:(y * w + sx1) * chb]
             if ch == chb and ra == rb:
                 continue
             for i in range(n):
+                if row_mask is not None and row_mask[i] != want:
+                    continue
                 d = max(abs(ra[i * ch + k] - rb[i * chb + k]) for k in range(3))
                 if d:
                     changed += 1
@@ -151,6 +163,61 @@ def compare_region(a: tuple, b: tuple, rect: list[float], ignore: list[list[floa
                     biggest = max(biggest, d)
     return dict(pixels=pixels, changed=changed, changed_ratio=changed / pixels if pixels else 0.0,
                 mean_abs=total / pixels if pixels else 0.0, max_abs=biggest, size_mismatch=False)
+
+
+MASK_MAGIC = b"NUIM"
+
+
+def make_mask(with_ui: tuple, without_ui: tuple, grow: int = 1) -> bytes:
+    """1 where the frame drawn with Nitrogen's HUD/menu primitives differs from
+    the same deterministic frame drawn without them, grown by `grow` pixels so
+    filtered and blended UI edges are included."""
+    w, h, ch, pa = with_ui
+    if (without_ui[0], without_ui[1]) != (w, h):
+        raise ValueError("mask frames differ in size")
+    chb, pb = without_ui[2], without_ui[3]
+    core = bytearray(w * h)
+    for y in range(h):
+        ra = pa[y * w * ch:(y + 1) * w * ch]
+        rb = pb[y * w * chb:(y + 1) * w * chb]
+        if ch == chb and ra == rb:
+            continue
+        for x in range(w):
+            if any(ra[x * ch + k] != rb[x * chb + k] for k in range(3)):
+                core[y * w + x] = 1
+    if grow <= 0:
+        return bytes(core)
+    grown = bytearray(core)
+    for y in range(h):
+        row = core[y * w:(y + 1) * w]
+        if 1 not in row:
+            continue
+        for x in range(w):
+            if row[x]:
+                for yy in range(max(0, y - grow), min(h, y + grow + 1)):
+                    grown[yy * w + max(0, x - grow):yy * w + min(w, x + grow + 1)] = \
+                        b"\x01" * (min(w, x + grow + 1) - max(0, x - grow))
+    return bytes(grown)
+
+
+def save_mask(path: Path, w: int, h: int, mask: bytes) -> None:
+    import struct
+    import zlib
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(MASK_MAGIC + struct.pack("<2I", w, h) + zlib.compress(mask, 9))
+
+
+def load_mask(path: Path) -> tuple[int, int, bytes]:
+    import struct
+    import zlib
+    data = path.read_bytes()
+    if data[:4] != MASK_MAGIC:
+        raise ValueError(f"Not a UI mask: {path.name}")
+    w, h = struct.unpack_from("<2I", data, 4)
+    mask = zlib.decompress(data[12:])
+    if len(mask) != w * h:
+        raise ValueError(f"Corrupt UI mask: {path.name}")
+    return w, h, mask
 
 
 def within(stats: dict, tolerance: dict) -> bool:
@@ -214,14 +281,15 @@ def place_mesa(measure, local: Path, exe: Path, player: Path) -> None:
         raise ValueError("Mesa files found beside the player executable; refusing to test")
 
 
-def run_scenario(measure, info: dict, exe: Path, s: dict, out: Path, baselines: Path, update: bool) -> dict:
+def run_scenario(measure, info: dict, exe: Path, s: dict, out: Path, baselines: Path, update: bool,
+                 hide_ui: bool = False) -> dict:
     kind = s.get("capture_kind", "present")
     window = s["window"]
     run = dict(id=s["id"], kind=f"scenario ({s['renderer']})", mode=window["mode"], width=window["width"],
                height=window["height"], route=s.get("route", "default"), captures=s.get("captures") or [],
                golden=kind == "guest", renderer="software" if s["renderer"] == "software" else "opengl",
                vsync_via="option")
-    run_dir = out / "runs" / s["id"]
+    run_dir = out / "runs" / (s["id"] + ("-noui" if hide_ui else ""))
     if run_dir.exists():
         shutil.rmtree(run_dir)
     (run_dir / "cards").mkdir(parents=True)
@@ -229,6 +297,8 @@ def run_scenario(measure, info: dict, exe: Path, s: dict, out: Path, baselines: 
     if kind == "guest":
         text = config.read_text(encoding="utf-8").replace("present_capture 1", "present_capture 0")
         config.write_text(text, encoding="utf-8")
+    if hide_ui:
+        config.write_text(config.read_text(encoding="utf-8") + "hide_ui 1\n", encoding="utf-8")
     options = dict(DEFAULT_OPTIONS, **(s.get("options") or {}))
     (run_dir / "nitrogen-options.ini").write_text("".join(f"{k} {v}\n" for k, v in options.items()), encoding="utf-8")
     from run_runtime import runtime_environment
@@ -275,6 +345,17 @@ def run_scenario(measure, info: dict, exe: Path, s: dict, out: Path, baselines: 
             if not captured.is_file():
                 checks.append(dict(type="image", capture=c["capture"], passed=False, detail="capture missing"))
                 continue
+            if hide_ui:
+                if not base.is_file():
+                    checks.append(dict(type="image", capture=c["capture"], passed=None,
+                                       detail="no mask: no baseline to compare with"))
+                    continue
+                with_ui = read_image(base, kind == "present")
+                mask = make_mask(with_ui, read_image(captured, kind == "present"))
+                save_mask(base.with_suffix(".uimask"), with_ui[0], with_ui[1], mask)
+                checks.append(dict(type="image", capture=c["capture"], passed=None,
+                                   detail=f"UI mask recorded ({mask.count(1)} of {len(mask)} pixels)"))
+                continue
             if update:
                 base.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(captured, base)
@@ -286,15 +367,26 @@ def run_scenario(measure, info: dict, exe: Path, s: dict, out: Path, baselines: 
             bottom_up = kind == "present"
             a, b = read_image(captured, bottom_up), read_image(base, bottom_up)
             regions = []
+            mask_file = base.with_suffix(".uimask")
+            mask = load_mask(mask_file)[2] if mask_file.is_file() else None
             for r in c.get("regions") or [dict(name="whole", rect=[0, 0, 1, 1])]:
-                stats = compare_region(a, b, r["rect"], [i["rect"] for i in c.get("ignore") or []])
+                if r.get("mask") and mask is None:
+                    regions.append(dict(name=r.get("name", "region"), passed=None, pixels=0, changed=0,
+                                        changed_ratio=0.0, mean_abs=0.0, max_abs=0, size_mismatch=False,
+                                        detail="not tested: no UI mask (run --make-masks)"))
+                    continue
+                stats = compare_region(a, b, r.get("rect", [0, 0, 1, 1]), [i["rect"] for i in c.get("ignore") or []],
+                                       mask if r.get("mask") else None, 1 if r.get("mask") == "ui" else 0)
                 regions.append(dict(name=r.get("name", "region"), passed=within(stats, c.get("tolerance") or
                                                                                  {"exact": True}), **stats))
-            checks.append(dict(type="image", capture=c["capture"], passed=all(r["passed"] for r in regions),
+            checks.append(dict(type="image", capture=c["capture"],
+                               passed=(None if any(r["passed"] is None for r in regions) else
+                                       all(r["passed"] for r in regions)),
                                regions=regions))
     # Every check must have run and passed. A skipped or recorded image check
     # leaves the scenario unverified rather than passed.
-    recorded = any(c.get("detail") == "baseline updated" for c in checks)
+    recorded = any(c.get("detail") == "baseline updated" or str(c.get("detail", "")).startswith("UI mask recorded")
+                   for c in checks)
     passed = route_ok and bool(checks) and all(c["passed"] is True for c in checks)
     return dict(id=s["id"], description=s.get("description", ""), renderer=s["renderer"], gl=gl_line,
                 window=[window["width"], window["height"]], seconds=seconds, status=result["status"],
@@ -323,6 +415,9 @@ def markdown(results: list[dict], started: str) -> str:
             mark = {True: "pass", False: "FAIL", None: "not tested"}[c["passed"]]
             if c["type"] == "image" and c.get("regions"):
                 for g in c["regions"]:
+                    if g["passed"] is None:
+                        lines.append(f"- image {c['capture']} [{g['name']}]: {g.get('detail', 'not tested')}")
+                        continue
                     lines.append(f"- image {c['capture']} [{g['name']}]: {'pass' if g['passed'] else 'FAIL'} "
                                  f"(changed {g['changed']}/{g['pixels']}, mean {g['mean_abs']:.3f}, max {g['max_abs']})")
             else:
@@ -339,6 +434,9 @@ def main(argv=None) -> int:
     p.add_argument("--only", action="append", default=[])
     p.add_argument("--update-baselines", action="store_true",
                    help="Record this run's captures as the private baselines instead of comparing")
+    p.add_argument("--make-masks", action="store_true",
+                   help="Render each scenario with Nitrogen's HUD/menu primitives hidden and record UI masks "
+                        "against its existing baselines")
     p.add_argument("--validate-only", action="store_true", help="Check the scenario files and stop")
     args = p.parse_args(argv)
     scenarios = load_scenarios(args.scenarios or [HERE / "scenarios"], args.only)
@@ -356,14 +454,14 @@ def main(argv=None) -> int:
         place_mesa(measure, info["local"], exe, info["executable"])
     results = []
     for s in scenarios:
-        r = run_scenario(measure, info, exe, s, out, baselines, args.update_baselines)
+        r = run_scenario(measure, info, exe, s, out, baselines, args.update_baselines, args.make_masks)
         results.append(r)
         state = "pass" if r["passed"] else "baseline recorded" if r.get("recorded") else "not verified"
         print(f"{r['id']}: {state} [{r['status']}] ({r['seconds']} s)", flush=True)
     (out / "report.json").write_text(json.dumps(dict(started=started, results=results), indent=1), encoding="utf-8")
     (out / "report.md").write_text(markdown(results, started), encoding="utf-8")
     print(out / "report.md")
-    if args.update_baselines:
+    if args.update_baselines or args.make_masks:
         return 0 if all(r["status"] == "completed" for r in results) else 1
     return 0 if all(r["passed"] for r in results) else 1
 
