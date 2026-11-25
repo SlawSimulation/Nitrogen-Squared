@@ -38,10 +38,15 @@ sys.path.insert(0, str(ROOT / "tools"))
 import display_report as report  # noqa: E402
 
 RENDERERS = ("software", "mesa", "opengl")
-CHECKS = ("route_completed", "page_at", "image")
+CHECKS = ("route_completed", "page_at", "image", "options_saved")
 KINDS = ("present", "guest")
 DEFAULT_OPTIONS = dict(video_mode=0, hud_scale=0, render_percent=100, master_volume=0, aspect=0, vsync=1,
                        hud_layout=0)
+# nitrogen-options.ini keys in compat/nitrogen_options.h enum order (the index the
+# fixture passes to nitrogen_option_set). A unit test checks this against the header.
+OPTION_KEYS = ("video_mode", "hud_scale", "render_percent", "master_volume", "aspect", "vsync", "hud_layout",
+               "fullscreen_refresh", "texture_filter", "dithering", "screen_model", "scanlines", "brightness")
+PICTURE_PRESETS = ("original", "smooth", "crt", "composite")
 MESA_FILES = ("opengl32.dll", "libgallium_wgl.dll")
 
 
@@ -63,13 +68,23 @@ def validate(s: dict) -> list[str]:
         errors.append("capture_kind must be present or guest")
     if s.get("renderer") == "software" and s.get("capture_kind", "present") == "present":
         errors.append("the software renderer has no OpenGL presentation; use capture_kind guest")
-    unknown = set(s.get("options") or {}) - set(DEFAULT_OPTIONS) - {"fullscreen_refresh"}
+    unknown = set(s.get("options") or {}) - set(OPTION_KEYS)
     if unknown:
         errors.append(f"unknown options {sorted(unknown)}")
+    for item in s.get("set_options_at") or []:
+        if not (isinstance(item, list) and len(item) == 3 and isinstance(item[0], int) and item[1] in OPTION_KEYS
+                and isinstance(item[2], int)):
+            errors.append("set_options_at entries are [frame, option key, integer value]")
+    for item in s.get("preset_at") or []:
+        if not (isinstance(item, list) and len(item) == 2 and isinstance(item[0], int) and item[1] in PICTURE_PRESETS):
+            errors.append(f"preset_at entries are [frame, one of {PICTURE_PRESETS}]")
+    restart = s.get("restart")
+    if restart is not None and not (isinstance(restart, dict) and isinstance(restart.get("checks"), list)):
+        errors.append("restart needs a checks list")
     captures = s.get("captures") or []
     if not all(isinstance(c, int) and c >= 0 for c in captures):
         errors.append("captures must be non-negative frame numbers")
-    for c in s.get("checks") or []:
+    for c in (s.get("checks") or []) + ((s.get("restart") or {}).get("checks") or []):
         t = c.get("type")
         if t not in CHECKS:
             errors.append(f"unknown check {t!r}")
@@ -88,6 +103,10 @@ def validate(s: dict) -> list[str]:
                     errors.append("regions/ignore need rect [x0, y0, x1, y1] as fractions with x0<x1, y0<y1")
         elif t == "page_at" and not (isinstance(c.get("frame"), int) and isinstance(c.get("page"), int)):
             errors.append("page_at needs integer frame and page")
+        elif t == "options_saved" and not (isinstance(c.get("values"), dict) and set(c["values"]) <= set(OPTION_KEYS)):
+            errors.append("options_saved needs values {option key: integer}")
+        if t == "image" and c.get("against") is not None and not isinstance(c.get("against"), str):
+            errors.append("image against must be a scenario id")
     return errors
 
 
@@ -166,6 +185,7 @@ def compare_region(a: tuple, b: tuple, rect: list[float], ignore: list[list[floa
 
 
 MASK_MAGIC = b"NUIM"
+MASK_DRAW_DELAY = 2   # frame hooks between drawing a frame and presenting it
 
 
 def make_mask(with_ui: tuple, without_ui: tuple, grow: int = 1) -> bytes:
@@ -223,6 +243,8 @@ def load_mask(path: Path) -> tuple[int, int, bytes]:
 def within(stats: dict, tolerance: dict) -> bool:
     if stats["size_mismatch"]:
         return False
+    if tolerance.get("expect_change", False):
+        return stats["changed"] > 0
     if tolerance.get("exact", False):
         return stats["changed"] == 0
     return (stats["changed_ratio"] <= tolerance.get("max_changed_ratio", 0.0)
@@ -282,14 +304,15 @@ def place_mesa(measure, local: Path, exe: Path, player: Path) -> None:
 
 
 def run_scenario(measure, info: dict, exe: Path, s: dict, out: Path, baselines: Path, update: bool,
-                 hide_ui: bool = False) -> dict:
+                 hide_ui: str = "", restart_from: Path | None = None) -> dict:
     kind = s.get("capture_kind", "present")
     window = s["window"]
     run = dict(id=s["id"], kind=f"scenario ({s['renderer']})", mode=window["mode"], width=window["width"],
                height=window["height"], route=s.get("route", "default"), captures=s.get("captures") or [],
                golden=kind == "guest", renderer="software" if s["renderer"] == "software" else "opengl",
                vsync_via="option")
-    run_dir = out / "runs" / (s["id"] + ("-noui" if hide_ui else ""))
+    suffix = {"": "", "shown": "-mask-ui", "hidden": "-mask-noui"}[hide_ui or ""]
+    run_dir = out / "runs" / (s["id"] + suffix + ("-restart" if restart_from else ""))
     if run_dir.exists():
         shutil.rmtree(run_dir)
     (run_dir / "cards").mkdir(parents=True)
@@ -297,12 +320,26 @@ def run_scenario(measure, info: dict, exe: Path, s: dict, out: Path, baselines: 
     if kind == "guest":
         text = config.read_text(encoding="utf-8").replace("present_capture 1", "present_capture 0")
         config.write_text(text, encoding="utf-8")
-    if hide_ui:
-        config.write_text(config.read_text(encoding="utf-8") + "hide_ui 1\n", encoding="utf-8")
-    options = dict(DEFAULT_OPTIONS, **(s.get("options") or {}))
-    (run_dir / "nitrogen-options.ini").write_text("".join(f"{k} {v}\n" for k, v in options.items()), encoding="utf-8")
+    # Mask runs: render worker off (frame-exact order) and, in the hidden run,
+    # the HUD skipped in the captured frames only.
+    # The frame presented at capture N was drawn two frame hooks earlier (the
+    # game double-buffers; measured on 1024x768: offsets 0, 1, 3 and 4 leave the
+    # HUD in place, 2 removes it), so the HUD is hidden in exactly that frame.
+    extra = ([f"hide_ui_rel {f - MASK_DRAW_DELAY}" for f in run["captures"] if f > MASK_DRAW_DELAY]
+             if hide_ui == "hidden" else [])
+    if not restart_from:
+        extra += [f"option_rel {f} {OPTION_KEYS.index(k)} {v}" for f, k, v in s.get("set_options_at") or []]
+        extra += [f"preset_rel {f} {PICTURE_PRESETS.index(n)}" for f, n in s.get("preset_at") or []]
+    if extra:
+        config.write_text(config.read_text(encoding="utf-8") + "".join(x + "\n" for x in extra), encoding="utf-8")
+    if restart_from:            # a real restart: the options file the first run saved, unchanged
+        shutil.copyfile(restart_from, run_dir / "nitrogen-options.ini")
+    else:
+        options = dict(DEFAULT_OPTIONS, **(s.get("options") or {}))
+        (run_dir / "nitrogen-options.ini").write_text("".join(f"{k} {v}\n" for k, v in options.items()),
+                                                      encoding="utf-8")
     from run_runtime import runtime_environment
-    env = runtime_environment(info["work"], render_worker=None)
+    env = runtime_environment(info["work"], render_worker=False if hide_ui else None)
     env.pop("PSX_VSYNC", None)
     env.update(NITROGEN_MEASURE_CONFIG=str(config), NITROGEN_OPTIONS_FILE=str(run_dir / "nitrogen-options.ini"),
                NITROGEN_NATIVE_DISC_BIN=str(info["disc_bin"]),
@@ -330,8 +367,17 @@ def run_scenario(measure, info: dict, exe: Path, s: dict, out: Path, baselines: 
     fixture = report.read_info(run_dir / "fixture-info.json")
     anchor = (fixture.get("timing") or {}).get("measure_anchor") or 0
     rows = report.read_csv(run_dir / "frames.csv")
-    for c in s.get("checks") or []:
-        if c["type"] == "route_completed":
+    for c in ((s.get("restart") or {}).get("checks") or []) if restart_from else (s.get("checks") or []):
+        if c["type"] == "options_saved":
+            saved = {}
+            for line in (run_dir / "nitrogen-options.ini").read_text(encoding="utf-8").splitlines():
+                parts = line.split()
+                if len(parts) == 2 and parts[1].lstrip("-").isdigit():
+                    saved[parts[0]] = int(parts[1])
+            wrong = {k: saved.get(k) for k, v in c["values"].items() if saved.get(k) != v}
+            checks.append(dict(type="options_saved", passed=not wrong,
+                               detail="saved as expected" if not wrong else f"saved values differ: {wrong}"))
+        elif c["type"] == "route_completed":
             checks.append(dict(type="route_completed", passed=route_ok, detail=result.get("reason") or "completed"))
         elif c["type"] == "page_at":
             pages = [r["page"] for r in rows if anchor and r["frame"] - anchor <= c["frame"]]
@@ -341,22 +387,28 @@ def run_scenario(measure, info: dict, exe: Path, s: dict, out: Path, baselines: 
         else:
             name = f"{kind}-{c['capture']}.raw"
             captured = run_dir / name
-            base = baselines / s.get("baseline_set", "original") / s["renderer"] / s["id"] / name
+            own = baselines / s.get("baseline_set", "original") / s["renderer"] / (s["id"] + ("-restart" if restart_from else "")) / name
+            against = c.get("against")
+            base = (baselines / c.get("against_set", "original") / s["renderer"] / against / name) if against else own
             if not captured.is_file():
                 checks.append(dict(type="image", capture=c["capture"], passed=False, detail="capture missing"))
                 continue
-            if hide_ui:
-                if not base.is_file():
+            if hide_ui == "shown":
+                checks.append(dict(type="image", capture=c["capture"], passed=None, detail="mask reference frame"))
+                continue
+            if hide_ui == "hidden":
+                shown = out / "runs" / (s["id"] + "-mask-ui") / name
+                if not (base.is_file() and shown.is_file()):
                     checks.append(dict(type="image", capture=c["capture"], passed=None,
-                                       detail="no mask: no baseline to compare with"))
+                                       detail="no mask: baseline or reference frame missing"))
                     continue
-                with_ui = read_image(base, kind == "present")
+                with_ui = read_image(shown, kind == "present")
                 mask = make_mask(with_ui, read_image(captured, kind == "present"))
                 save_mask(base.with_suffix(".uimask"), with_ui[0], with_ui[1], mask)
                 checks.append(dict(type="image", capture=c["capture"], passed=None,
                                    detail=f"UI mask recorded ({mask.count(1)} of {len(mask)} pixels)"))
                 continue
-            if update:
+            if update and not against:
                 base.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(captured, base)
                 checks.append(dict(type="image", capture=c["capture"], passed=None, detail="baseline updated"))
@@ -388,7 +440,13 @@ def run_scenario(measure, info: dict, exe: Path, s: dict, out: Path, baselines: 
     recorded = any(c.get("detail") == "baseline updated" or str(c.get("detail", "")).startswith("UI mask recorded")
                    for c in checks)
     passed = route_ok and bool(checks) and all(c["passed"] is True for c in checks)
-    return dict(id=s["id"], description=s.get("description", ""), renderer=s["renderer"], gl=gl_line,
+    if not restart_from and s.get("restart") and route_ok:
+        second = run_scenario(measure, info, exe, s, out, baselines, update, restart_from=run_dir / "nitrogen-options.ini")
+        checks.append(dict(type="restart", passed=second["passed"] if not update else None,
+                           detail=f"second launch from the saved options: {'pass' if second['passed'] else second['status']}",
+                           restart=second))
+    return dict(id=s["id"] + ("-restart" if restart_from else ""), description=s.get("description", ""),
+                renderer=s["renderer"], gl=gl_line,
                 window=[window["width"], window["height"]], seconds=seconds, status=result["status"],
                 reason=result.get("reason"), passed=passed, checks=checks,
                 evidence=(evidence(s["renderer"], gl_line, route_ok) if passed else
@@ -454,7 +512,11 @@ def main(argv=None) -> int:
         place_mesa(measure, info["local"], exe, info["executable"])
     results = []
     for s in scenarios:
-        r = run_scenario(measure, info, exe, s, out, baselines, args.update_baselines, args.make_masks)
+        if args.make_masks:     # same frames with and without the HUD, worker off for both
+            run_scenario(measure, info, exe, s, out, baselines, False, "shown")
+            r = run_scenario(measure, info, exe, s, out, baselines, False, "hidden")
+        else:
+            r = run_scenario(measure, info, exe, s, out, baselines, args.update_baselines)
         results.append(r)
         state = "pass" if r["passed"] else "baseline recorded" if r.get("recorded") else "not verified"
         print(f"{r['id']}: {state} [{r['status']}] ({r['seconds']} s)", flush=True)

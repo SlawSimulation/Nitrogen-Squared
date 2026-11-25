@@ -56,6 +56,9 @@ extern "C" int nitrogen_extras_snapshot(int *) __attribute__((weak));
 extern "C" void gte_set_display_aspect(int num, int den);
 // HUD-mask runs (maintenance): skip primitives Nitrogen tags as HUD or menu.
 extern "C" void nitrogen_test_hide_ui(int on) __attribute__((weak));
+// Settings changed mid-run exactly as F1 changes them (saved to the options file).
+extern "C" int nitrogen_option_set(int option, int value) __attribute__((weak));
+extern "C" int nitrogen_picture_preset_apply(int preset) __attribute__((weak));
 extern "C" int nitrogen_option_get(int) __attribute__((weak));
 
 namespace {
@@ -118,7 +121,11 @@ struct Config {
     std::vector<ExtraRequest> extras_rel;  // maintenance: F1 game-extras requests
     int gte_aspect_num = 0, gte_aspect_den = 0;   // maintenance: projection squeeze
     std::vector<uint64_t> pgxp_stats_rel;  // maintenance: perspective-texture coverage counters
-    int hide_ui = 0;                       // maintenance: HUD-mask generation run
+    int hide_ui = 0;                       // maintenance: HUD hidden for the whole run
+    std::vector<uint64_t> hide_ui_rel;     // maintenance: HUD hidden in these frames only
+    struct OptionSet { uint64_t rel; int key, value; };
+    std::vector<OptionSet> options_rel;    // maintenance: F1-equivalent setting changes
+    std::vector<std::pair<uint64_t, int>> presets_rel;   // maintenance: F1-equivalent presets
 } cfg;
 bool load_config() {
     const char *path = std::getenv("NITROGEN_MEASURE_CONFIG");
@@ -149,6 +156,9 @@ bool load_config() {
         else if (key == "ram_dump_rel") { uint64_t f = 0; s >> f; cfg.ram_dumps_rel.push_back(f); }
         else if (key == "gte_aspect") s >> cfg.gte_aspect_num >> cfg.gte_aspect_den;
         else if (key == "hide_ui") s >> cfg.hide_ui;
+        else if (key == "hide_ui_rel") { uint64_t f = 0; s >> f; cfg.hide_ui_rel.push_back(f); }
+        else if (key == "option_rel") { Config::OptionSet o{}; s >> o.rel >> o.key >> o.value; cfg.options_rel.push_back(o); }
+        else if (key == "preset_rel") { uint64_t f = 0; int v = 0; s >> f >> v; cfg.presets_rel.emplace_back(f, v); }
         else if (key == "pgxp_stats_rel") { uint64_t f = 0; s >> f; cfg.pgxp_stats_rel.push_back(f); }
         else if (key == "extra_rel") { Config::ExtraRequest r{}; s >> r.rel >> r.extra >> r.value; cfg.extras_rel.push_back(r); }
         else if (key == "scale_sample") { uint64_t f = 0; s >> f; cfg.scale_samples.push_back(f); }
@@ -696,6 +706,21 @@ extern "C" bool __wrap_SDL_PollEvent(SDL_Event *event) {
                 instrumented = 1;
             }
         if (cfg.hide_ui && nitrogen_test_hide_ui) nitrogen_test_hide_ui(1);
+        // Frame-exact HUD hiding for masks: earlier frames keep their HUD, so
+        // anything the game reuses from previous frames stays identical. Use
+        // with the render worker off, where each frame draws in this order.
+        if (!cfg.hide_ui && !cfg.hide_ui_rel.empty() && nitrogen_test_hide_ui) {
+            bool hide = false;
+            for (uint64_t f : cfg.hide_ui_rel) hide |= f == rel;
+            nitrogen_test_hide_ui(hide ? 1 : 0);
+            if (hide) instrumented = 1;
+        }
+        for (const auto &o : cfg.options_rel)
+            if (o.rel == rel && nitrogen_option_set) { (void)nitrogen_option_set(o.key, o.value); instrumented = 1; }
+        for (const auto &pr : cfg.presets_rel)
+            if (pr.first == rel && nitrogen_picture_preset_apply) {
+                (void)nitrogen_picture_preset_apply(pr.second); instrumented = 1;
+            }
         for (uint64_t f : cfg.pgxp_stats_rel)
             if (f == rel) {   // free-running totals; diff two samples for a window
                 uint64_t att = 0, arm = 0, off = 0, nosrc = 0, noz = 0;

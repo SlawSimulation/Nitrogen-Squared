@@ -91,9 +91,10 @@ static void nitrogen_bind_framebuffer(GLenum target,GLuint framebuffer)
  * above use the original pointer and therefore cannot recurse into the fence. */
 #define p_glBindFramebuffer nitrogen_bind_framebuffer
 
-/* Test-only (measurement fixture): skip every primitive Nitrogen tags as HUD
- * or menu, so a second render of the same deterministic frame yields the
- * exact UI mask by difference. Always 0 in normal play. */
+/* Test-only (measurement fixture): collapse every primitive Nitrogen tags as
+ * HUD or menu off screen (in nitrogen_ui_vertex_flags), so a second render of
+ * the same deterministic frame yields the exact UI mask by difference. Every
+ * VRAM sync and batch step still runs. Always 0 in normal play. */
 static volatile int nitrogen_test_ui_hidden;
 void nitrogen_test_hide_ui(int on) { nitrogen_test_ui_hidden = on != 0; }
 static int nitrogen_world_skip(unsigned flags)

@@ -49,7 +49,6 @@ def adapt_renderer(text):
     text = replace(text, '    /* PS1 dithering: texture-modulated polygons only (never raw texels or',
         '    const unsigned nitrogen_tri_ui = rth_replaying() ? nitrogen_replay_ui : nitrogen_gpu_ui_flags();\n'
         '    nitrogen_world_select(nitrogen_tri_ui);\n'
-        '    if (nitrogen_world_skip(nitrogen_tri_ui)) return;\n'
         '    /* PS1 dithering: texture-modulated polygons only (never raw texels or')
     marker = 'static void gpu_geometry(GLenum mode, const int *xs, const int *ys,'
     helper = '''static void nitrogen_ui_vertex_flags(float *x, float *y, unsigned flags) {
@@ -59,6 +58,9 @@ def adapt_renderer(text):
     if (flags & 0x10u) {
         const float shift = g_wide_cur ? s_shift_hi : s_shift_hr;
         *x -= shift; *y -= shift; /* UI targets physical pixel boundaries. */
+        /* Test-only HUD masks: collapse the primitive off screen. Every VRAM
+         * sync, batch and state step still runs, so the world is unchanged. */
+        if (nitrogen_world_skip(flags)) { *x = -1.0e6f; *y = -1.0e6f; }
     }
 }
 static void nitrogen_ui_vertex(float *x, float *y) {
@@ -80,8 +82,7 @@ static void nitrogen_ui_vertex(float *x, float *y) {
         '    const int precise = s_pc_valid && mode == GL_TRIANGLES && n == 3;\n'
         '    const unsigned nitrogen_geometry_ui = rth_replaying() ? nitrogen_replay_ui :\n'
         '        mode == GL_LINES && n == 2 ? nitrogen_gpu_line_flags(xs[0],ys[0],xs[1],ys[1]) : nitrogen_gpu_ui_flags();\n'
-        '    nitrogen_world_select(nitrogen_geometry_ui);\n'
-        '    if (nitrogen_world_skip(nitrogen_geometry_ui)) return;')
+        '    nitrogen_world_select(nitrogen_geometry_ui);')
     text = replace(text, '            v[1] = (float)ys[i];',
         '            v[1] = (float)ys[i];\n'
         '            nitrogen_ui_vertex_flags(&v[0], &v[1], nitrogen_geometry_ui);')
