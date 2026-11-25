@@ -383,6 +383,52 @@ int main(int,char**argv){
         self.assertIn('_putenv_s("PSX_EXCLUSIVE_REFRESH_HZ"', host)
 
 
+@unittest.skipUnless(COMPILER, 'C++ compiler required for display fixtures')
+class TextureFilterTests(unittest.TestCase):
+    """V4-a: Sharp (original) by default; Smooth filters 3D world polygons only."""
+
+    def test_option_defaults_validates_and_persists(self):
+        with tempfile.TemporaryDirectory() as temp:
+            config = Path(temp) / 'nitrogen-options.ini'
+            env = dict(os.environ, NITROGEN_OPTIONS_FILE=str(config))
+            source = r"""
+#include "nitrogen_options.h"
+#include <cassert>
+#include <cstring>
+int main(int,char**argv){
+ nitrogen_options_init("unused/");
+ if(!std::strcmp(argv[1],"write")){
+  assert(nitrogen_option_get(NITROGEN_TEXTURE_FILTER)==NITROGEN_FILTER_SHARP);   // original default
+  assert(!nitrogen_option_set(NITROGEN_TEXTURE_FILTER,2));
+  assert(!nitrogen_option_set(NITROGEN_TEXTURE_FILTER,-1));
+  assert(nitrogen_option_set(NITROGEN_TEXTURE_FILTER,NITROGEN_FILTER_SMOOTH));
+ } else assert(nitrogen_option_get(NITROGEN_TEXTURE_FILTER)==NITROGEN_FILTER_SMOOTH);   // after a restart
+}
+"""
+            run_fixture(self, source, ['game_options.cpp'], ('write',), env)
+            self.assertIn('texture_filter 1', config.read_text())
+            run_fixture(self, source, ['game_options.cpp'], ('read',), env)
+
+    def test_renderer_keeps_hud_menus_and_sprites_sharp(self):
+        adapter = (ROOT / 'tools' / 'adapt_window_display.py').read_text(encoding='utf-8')
+        self.assertIn("const int filter = (s_selected_bank_tex || (nitrogen_tri_ui & 0x10u) || s_prim_rect) ? 0 :",
+                      adapter)
+        # The UI flag is the same value that selects the HUD target and the test-only HUD mask.
+        self.assertLess(adapter.index('nitrogen_tri_ui = rth_replaying()'), adapter.index('(nitrogen_tri_ui & 0x10u)'))
+
+    def test_host_applies_the_option_live_and_defaults_to_sharp(self):
+        host = (ROOT / 'compat' / 'runtime_host.cpp').read_text(encoding='utf-8')
+        update = host[host.index('static void nitrogen_window_update()\n{'):]
+        update = update[:update.index('\n}\n')]
+        self.assertIn('nitrogen_option_get(NITROGEN_TEXTURE_FILTER) == NITROGEN_FILTER_SMOOTH ? 1 : 0', update)
+        self.assertIn('if (gr_texture_filter() != filter) gr_set_texture_filter(filter);', update)
+        self.assertNotIn('g_video_texfilter = 0;', update)      # no longer forced
+        menu = (ROOT / 'compat' / 'desktop_menu.cpp').read_text(encoding='utf-8')
+        picture = menu[menu.index('void picture_settings()'):]
+        self.assertIn('"Sharp (original)"', picture[:600])
+        self.assertIn('nitrogen_option_set(NITROGEN_TEXTURE_FILTER, filter)', picture[:900])
+
+
 class SettingsParityTests(unittest.TestCase):
     """V1.2: the in-game Video menu and F1 Settings offer the same six options."""
     LABELS = {'NITROGEN_VIDEO_MODE': 'Window mode', 'NITROGEN_HUD_SCALE': 'HUD scale',

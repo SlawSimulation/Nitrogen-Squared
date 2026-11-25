@@ -134,9 +134,12 @@ static void nitrogen_window_update()
     // The old title config may already exist after an update. Resolve the
     // requested sharp presentation here, rather than requiring a reimport.
     g_video_aa = false;
-    g_video_texfilter = 0;
     g_video_fmv_filter = 0;
-    if (gr_texture_filter() != 0) gr_set_texture_filter(0);
+    // V4-a: Sharp (original) or Smooth world textures. The adapted renderer
+    // keeps HUD, menus and 2D sprites sharp under Smooth.
+    const int filter = nitrogen_option_get(NITROGEN_TEXTURE_FILTER) == NITROGEN_FILTER_SMOOTH ? 1 : 0;
+    g_video_texfilter = filter;
+    if (gr_texture_filter() != filter) gr_set_texture_filter(filter);
     nitrogen_gpu_enable_ui();
     gpu_ws_set_auto_ui_in_place(0);
     int num = width, den = height;

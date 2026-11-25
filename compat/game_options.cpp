@@ -14,9 +14,9 @@
 namespace {
 // Defaults keep the original presentation: AUTO aspect fills the window, VSync on.
 std::array<std::atomic<int>, NITROGEN_OPTION_COUNT> values{{NITROGEN_WINDOWED, 0, 100, 100, NITROGEN_ASPECT_AUTO, 1, NITROGEN_HUD_EDGES,
-                                                            NITROGEN_REFRESH_DESKTOP}};
+                                                            NITROGEN_REFRESH_DESKTOP, NITROGEN_FILTER_SHARP}};
 constexpr const char *names[]{"video_mode", "hud_scale", "render_percent", "master_volume", "aspect", "vsync", "hud_layout",
-                              "fullscreen_refresh"};
+                              "fullscreen_refresh", "texture_filter"};
 static_assert(sizeof(names) / sizeof(names[0]) == NITROGEN_OPTION_COUNT, "one name per option");
 std::mutex preferences_mutex;
 std::string preferences_path;
@@ -39,6 +39,7 @@ bool valid(int key, int value)
     case NITROGEN_VSYNC: return value == 0 || value == 1;
     case NITROGEN_HUD_LAYOUT: return value == NITROGEN_HUD_EDGES || value == NITROGEN_HUD_CENTRED_16_9;
     case NITROGEN_FULLSCREEN_REFRESH: return value == NITROGEN_REFRESH_DESKTOP || value == NITROGEN_REFRESH_SMOOTH_60;
+    case NITROGEN_TEXTURE_FILTER: return value == NITROGEN_FILTER_SHARP || value == NITROGEN_FILTER_SMOOTH;
     default: return false;
     }
 }

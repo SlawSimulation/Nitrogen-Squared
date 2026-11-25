@@ -50,6 +50,10 @@ def adapt_renderer(text):
         '    const unsigned nitrogen_tri_ui = rth_replaying() ? nitrogen_replay_ui : nitrogen_gpu_ui_flags();\n'
         '    nitrogen_world_select(nitrogen_tri_ui);\n'
         '    /* PS1 dithering: texture-modulated polygons only (never raw texels or')
+    # V4-a: Smooth filtering applies to 3D world polygons only. Primitives
+    # Nitrogen tags as HUD or menu, and 2D sprite rectangles, keep exact texels.
+    text = replace(text, '    const int filter = s_selected_bank_tex ? 0 :',
+                   '    const int filter = (s_selected_bank_tex || (nitrogen_tri_ui & 0x10u) || s_prim_rect) ? 0 :')
     marker = 'static void gpu_geometry(GLenum mode, const int *xs, const int *ys,'
     helper = '''static void nitrogen_ui_vertex_flags(float *x, float *y, unsigned flags) {
     nitrogen_window_ui_vertex(x, y, flags, s_area_x1, s_area_y1,

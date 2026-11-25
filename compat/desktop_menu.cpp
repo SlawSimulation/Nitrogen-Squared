@@ -93,6 +93,15 @@ void video_settings()
     if (ImGui::SliderInt("Render resolution", &percent, 25, 200, "%d%%", ImGuiSliderFlags_AlwaysClamp))
         nitrogen_option_set(NITROGEN_RENDER_PERCENT, std::clamp((percent + 2) / 5 * 5, 25, 200));
 }
+// V4 Picture: optional enhancements over the original look, each independent.
+void picture_settings()
+{
+    static const char *filters[] = {"Sharp (original)", "Smooth"};
+    int filter = nitrogen_option_get(NITROGEN_TEXTURE_FILTER);
+    if (ImGui::Combo("Textures", &filter, filters, IM_ARRAYSIZE(filters)))
+        nitrogen_option_set(NITROGEN_TEXTURE_FILTER, filter);
+    if (filter == NITROGEN_FILTER_SMOOTH) ImGui::TextDisabled("3D world only: the HUD, menus and sprites stay sharp.");
+}
 // The game's own Extras menu choices. The game owns these values: F1 queues
 // a change that the game thread applies between frames, and only the game's
 // own memory-card set-up save keeps it. Unavailable values are never guessed.
@@ -410,6 +419,8 @@ void draw(void *context, int, int)
             ImGui::SeparatorText("Display");
             video_settings();
             display_settings(m);
+            ImGui::SeparatorText("Picture");
+            picture_settings();
             ImGui::SeparatorText("Game extras");
             extras_settings();
 #else
