@@ -13,6 +13,7 @@
 #include "gpu.h"
 #include "gpu_gl_renderer.h"
 #include "mod_plugins.h"
+#include "psx_menu_host.h"
 #include <atomic>
 #include <cmath>
 #include <cstdint>
@@ -124,9 +125,12 @@ struct Config {
     int hide_ui = 0;                       // maintenance: HUD hidden for the whole run
     std::vector<uint64_t> hide_ui_rel;     // maintenance: HUD hidden in these frames only
     std::vector<uint64_t> hide_world_rel;  // maintenance: world hidden (HUD-only layer) in these frames only
+    int layer_white = 0;                   // maintenance: the HUD-only layer over white instead of black
     struct OptionSet { uint64_t rel; int key, value; };
     std::vector<OptionSet> options_rel;    // maintenance: F1-equivalent setting changes
     std::vector<std::pair<uint64_t, int>> presets_rel;   // maintenance: F1-equivalent presets
+    std::vector<uint64_t> menu_open_rel;   // maintenance: F1 Settings opened, captured, closed
+    uint64_t menu_swaps = 12;              // presented frames before that capture (layout settles)
 } cfg;
 bool load_config() {
     const char *path = std::getenv("NITROGEN_MEASURE_CONFIG");
@@ -159,7 +163,10 @@ bool load_config() {
         else if (key == "hide_ui") s >> cfg.hide_ui;
         else if (key == "hide_ui_rel") { uint64_t f = 0; s >> f; cfg.hide_ui_rel.push_back(f); }
         else if (key == "hide_world_rel") { uint64_t f = 0; s >> f; cfg.hide_world_rel.push_back(f); }
+        else if (key == "layer_white") s >> cfg.layer_white;
         else if (key == "option_rel") { Config::OptionSet o{}; s >> o.rel >> o.key >> o.value; cfg.options_rel.push_back(o); }
+        else if (key == "menu_open_rel") { uint64_t f = 0; s >> f; cfg.menu_open_rel.push_back(f); }
+        else if (key == "menu_swaps") s >> cfg.menu_swaps;
         else if (key == "preset_rel") { uint64_t f = 0; int v = 0; s >> f >> v; cfg.presets_rel.emplace_back(f, v); }
         else if (key == "pgxp_stats_rel") { uint64_t f = 0; s >> f; cfg.pgxp_stats_rel.push_back(f); }
         else if (key == "extra_rel") { Config::ExtraRequest r{}; s >> r.rel >> r.extra >> r.value; cfg.extras_rel.push_back(r); }
@@ -237,6 +244,10 @@ bool quit_sent = false, applied = false, written = false;
 std::atomic<uint64_t> present_target{~0ull};
 std::atomic<int> present_pending{0};
 std::atomic<uint64_t> present_name{0};
+// F1 Settings captures: 1 = open, counting presented frames (swap thread);
+// 2 = captured, close it on the main thread. The guest is paused meanwhile.
+std::atomic<int> menu_phase{0};
+std::atomic<uint64_t> menu_name{0}, menu_swaps_seen{0};
 uint64_t source_calls = 0, source_registrations = 0, source_last_frame = 0;
 size_t stage_index = 0;
 uint64_t stage_wait_since = 0, measure_anchor = 0;   // 0 = the last stage is not anchored yet
@@ -690,6 +701,19 @@ extern "C" bool __wrap_SDL_PollEvent(SDL_Event *event) {
         for (uint64_t s : cfg.scale_rel) sample |= s == rel;
         for (uint64_t c : cfg.captures) capture |= c == frame;
         for (uint64_t c : cfg.captures_rel) capture |= c == rel;
+        for (uint64_t m : cfg.menu_open_rel)
+            if (m == rel) {   // the menu capture replaces this frame's normal capture
+                const PsxMenuProvider *p = psx_menu_provider();
+                capture = false; instrumented = 1;
+                char b[120];
+                std::snprintf(b, sizeof b, "{\"rel\":%llu,\"frame\":%llu,\"provider\":%d}",
+                              (unsigned long long)rel, (unsigned long long)frame, p && p->set_open ? 1 : 0);
+                info("menu_open", b);
+                if (p && p->set_open) {
+                    menu_name.store(rel); menu_swaps_seen.store(0); menu_phase.store(1);
+                    p->set_open(p->ctx, 1);
+                }
+            }
         for (uint64_t d : cfg.ram_dumps_rel)
             if (d == rel) {   // read-only copy of guest RAM into the private .local output
                 char name[64]; std::snprintf(name, sizeof name, "/ram-%llu.bin", (unsigned long long)rel);
@@ -716,6 +740,7 @@ extern "C" bool __wrap_SDL_PollEvent(SDL_Event *event) {
             int mode = 0;
             for (uint64_t f : cfg.hide_ui_rel) if (f == rel) mode |= 1;
             for (uint64_t f : cfg.hide_world_rel) if (f == rel) mode |= 2;
+            if ((mode & 2) && cfg.layer_white) mode |= 4;   // cleared to white: opacity proof
             nitrogen_test_hide_ui(mode);
             if (mode) instrumented = 1;
         }
@@ -762,6 +787,13 @@ extern "C" bool __wrap_SDL_PollEvent(SDL_Event *event) {
             quit_sent = true; *event = {}; event->type = SDL_EVENT_QUIT; return true;
         }
     }
+    if (menu_phase.load() == 2) {   // captured: close it; the guest resumes
+        const PsxMenuProvider *p = psx_menu_provider();
+        if (p && p->set_open) p->set_open(p->ctx, 0);
+        menu_phase.store(0);
+        char b[80]; std::snprintf(b, sizeof b, "{\"rel\":%llu}", (unsigned long long)menu_name.load());
+        info("menu_closed", b);
+    }
     const bool done = frame >= cfg.stop || route_failed || (cfg.stop_rel && relative(frame) != ~0ull &&
                                                             relative(frame) >= cfg.stop_rel);
     if (done && !quit_sent) {
@@ -783,6 +815,11 @@ extern "C" bool __wrap_SDL_GL_SwapWindow(SDL_Window *window) {
     if (present_pending.load(std::memory_order_acquire) && s_frame_count >= present_target.load()) {
         present_pending.store(0);
         present_capture(window, present_name.load());
+        instrumented = 1;
+    }
+    if (menu_phase.load() == 1 && menu_swaps_seen.fetch_add(1) + 1 >= cfg.menu_swaps) {
+        present_capture(window, menu_name.load());   // the overlay is drawn before the swap
+        menu_phase.store(2);
         instrumented = 1;
     }
     if (++swaps_seen % 240 == 0) memory_sample();

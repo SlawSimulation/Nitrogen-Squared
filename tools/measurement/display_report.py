@@ -52,6 +52,15 @@ DEFAULT_CAPTURES = [0, 150, 300, 400, 700, 1100, 1500, 1600, 1800, 2200, 2700, 3
 LONG_CAPTURES = DEFAULT_CAPTURES + list(range(4500, 16500, 750))
 MATRIX_CAPTURES = [400, 1600, 2700]    # gameplay, pause, gameplay: enough to review framing and HUD
 PRE_MENU_FRAMES = 6500                 # approximate movies, title, loading and menus at full speed
+# Menu route for menu checks: walks the menus on fixed frames from the first
+# menu scanout (the menu timing is deterministic from there; only the movies
+# before it follow real time): attract title, main menu, ship select, level
+# select, the level's first help pop-up accepted with Cross so its help pages
+# show, then the next pages. (The legal card before it is presented once and
+# then held, so it has no repeatable frame to capture.)
+MENU_STEPS = [(NONE, 900), (CROSS, 20), (NONE, 500), (CROSS, 20), (NONE, 500), (CROSS, 20),
+              (NONE, 900), (CROSS, 20), (NONE, 300), (CROSS, 20), (NONE, 300), (CROSS, 20), (NONE, 300)]
+ROUTES = ("discover", "default", "long", "menus")
 
 
 def stage(kind: str, a: int = 0, b: int = 0, delay: int = 0, timeout: int = WAIT_LIMIT, repeat: bool = False,
@@ -65,8 +74,12 @@ def route_config(name: str) -> dict:
     the route waits for the title card, the main menu and each menu page rather
     than for fixed frame numbers; the last stage anchors on the accepted level
     start, and captures, samples and the stop point are relative to it."""
-    if name not in ("discover", "default", "long"):
+    if name not in ROUTES:
         raise ValueError(f"Unknown route {name}")
+    if name == "menus":      # anchored on the first menu scanout after the title card
+        return dict(stages=[stage("display", TITLE_WIDTH, delay=90, steps=[(CROSS, 20)]),
+                            stage("display", MENU_WIDTH, steps=MENU_STEPS)],
+                    stop_rel=sum(f for _, f in MENU_STEPS), captures_rel=[300], scale_rel=[])
     play = START_STEPS + GAMEPLAY_STEPS + (LOOP_STEPS * 8 if name == "long" else [])
     stages = [stage("display", TITLE_WIDTH, delay=90, steps=[(CROSS, 20)]),
               stage("display", MENU_WIDTH),

@@ -1,0 +1,223 @@
+{
+  "id": "v4-smooth-menus-1024x768",
+  "description": "Smooth textures through the menus at 1024x768: titles, menu text, icons, menu art and help pop-ups (the HUD-tagged layer and its opaque pixels) stay identical to the original; translucent pixels are reported where the smoothed world shows through.",
+  "renderer": "mesa",
+  "window": {
+    "mode": "windowed",
+    "width": 1024,
+    "height": 768
+  },
+  "options": {
+    "texture_filter": 1
+  },
+  "route": "menus",
+  "capture_kind": "present",
+  "captures": [
+    150,
+    1200,
+    1710,
+    2400,
+    3060,
+    3240,
+    3480,
+    3750
+  ],
+  "baseline_set": "v4",
+  "checks": [
+    {
+      "type": "route_completed"
+    },
+    {
+      "type": "image",
+      "capture": 150,
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "exact": true
+      }
+    },
+    {
+      "type": "image",
+      "capture": 1200,
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "exact": true
+      }
+    },
+    {
+      "type": "image",
+      "capture": 1710,
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "exact": true
+      }
+    },
+    {
+      "type": "image",
+      "capture": 2400,
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "exact": true
+      }
+    },
+    {
+      "type": "image",
+      "capture": 3060,
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "exact": true
+      }
+    },
+    {
+      "type": "image",
+      "capture": 3240,
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "exact": true
+      }
+    },
+    {
+      "type": "image",
+      "capture": 3480,
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "exact": true
+      }
+    },
+    {
+      "type": "image",
+      "capture": 3750,
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "exact": true
+      }
+    },
+    {
+      "type": "hud_sharp",
+      "capture": 150,
+      "against": "original-mesa-menus-1024x768",
+      "against_set": "original"
+    },
+    {
+      "type": "hud_sharp",
+      "capture": 1200,
+      "against": "original-mesa-menus-1024x768",
+      "against_set": "original"
+    },
+    {
+      "type": "hud_sharp",
+      "capture": 1710,
+      "against": "original-mesa-menus-1024x768",
+      "against_set": "original"
+    },
+    {
+      "type": "hud_sharp",
+      "capture": 2400,
+      "against": "original-mesa-menus-1024x768",
+      "against_set": "original"
+    },
+    {
+      "type": "hud_sharp",
+      "capture": 3060,
+      "against": "original-mesa-menus-1024x768",
+      "against_set": "original"
+    },
+    {
+      "type": "hud_sharp",
+      "capture": 3240,
+      "against": "original-mesa-menus-1024x768",
+      "against_set": "original"
+    },
+    {
+      "type": "hud_sharp",
+      "capture": 3480,
+      "against": "original-mesa-menus-1024x768",
+      "against_set": "original"
+    },
+    {
+      "type": "hud_sharp",
+      "capture": 3750,
+      "against": "original-mesa-menus-1024x768",
+      "against_set": "original"
+    }
+  ]
+}

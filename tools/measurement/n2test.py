@@ -15,20 +15,20 @@ HUD checks. The render worker changes which game moment a capture shows, so
 HUD comparisons never mix worker-on and worker-off images. Each HUD check uses
 two extra worker-off runs of the scenario: "hud-ref" (the normal composite) and
 "hud-layer" (the same frames with every non-HUD primitive collapsed, so only
-the HUD's own contribution over the cleared frame remains). --make-masks
-records, for a reference scenario, hudref-N.raw, hudlayer-N.raw, hudworld-N.raw
-(a third worker-off run with the HUD hidden) and the UI mask (where hud-ref and
-hudworld differ). A hud_sharp check then requires:
+the HUD's own contribution over a frame cleared to black remains). --make-masks
+records, for a reference scenario, hudref-N.raw, hudlayer-N.raw, hudwhite-N.raw
+(the HUD layer again over a frame cleared to white) and the UI mask (where
+hud-ref and a worker-off run with the HUD hidden differ). A hud_sharp check
+then requires:
   - the HUD layer to be byte-identical to the reference layer (whole frame);
-  - opaque HUD pixels of the composite to be byte-identical, where opaque means
-    inside the UI mask, identical between the reference composite and reference
-    layer (no world contribution) and different from the world behind it (so
-    the pixel is proven to be the HUD's own);
+  - opaque HUD pixels of the composite to be byte-identical. Opaque is proven,
+    not inferred: inside the UI mask, the reference HUD layer is identical over
+    black and over white, and the reference composite equals it (nothing drawn
+    over the HUD). Every PS1 blend is monotone in the background, so a pixel
+    equal over both extremes is the same over any world;
 and reports, without gating, how many translucent HUD pixels (inside the mask,
-with a world contribution) changed because the world behind them changed, and
-how many ambiguous ones changed: pixels where the reference composite, layer
-and world are all equal (in practice black over black), so the reference
-cannot show whether the HUD covers them.
+where the world shows through or draws over the HUD) changed because the world
+changed.
 
 Runs use the separately linked measurement fixture; the player executable is
 never changed. Renderers:
@@ -60,6 +60,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 import display_report as report  # noqa: E402
 
 RENDERERS = ("software", "mesa", "opengl")
+ROUTES = ("default", "long", "menus")
 CHECKS = ("route_completed", "page_at", "image", "options_saved", "hud_sharp")
 KINDS = ("present", "guest")
 DEFAULT_OPTIONS = dict(video_mode=0, hud_scale=0, render_percent=100, master_volume=0, aspect=0, vsync=1,
@@ -84,8 +85,15 @@ def validate(s: dict) -> list[str]:
     if w.get("mode") not in ("windowed", "none") or not all(isinstance(w.get(k), int) and w[k] >= 0
                                                           for k in ("width", "height")):
         errors.append("window needs mode windowed|none and integer width/height")
-    if s.get("route", "default") not in ("default", "long"):
-        errors.append("route must be default or long")
+    if s.get("route", "default") not in ROUTES:
+        errors.append(f"route must be one of {ROUTES}")
+    menu = s.get("menu_open_at") or []
+    if not (isinstance(menu, list) and all(isinstance(f, int) and f in (s.get("captures") or []) for f in menu)):
+        errors.append("menu_open_at must list captured frames (F1 Settings is captured instead of the game)")
+    if not isinstance(s.get("menu_over_black", False), bool) or (s.get("menu_over_black") and not menu):
+        errors.append("menu_over_black is true or false and needs menu_open_at")
+    if not isinstance(s.get("mask_draw_delay", MASK_DRAW_DELAY), int) or s.get("mask_draw_delay", MASK_DRAW_DELAY) < 1:
+        errors.append("mask_draw_delay must be a positive frame count")
     if s.get("capture_kind", "present") not in KINDS:
         errors.append("capture_kind must be present or guest")
     if s.get("renderer") == "software" and s.get("capture_kind", "present") == "present":
@@ -119,6 +127,9 @@ def validate(s: dict) -> list[str]:
                     continue
                 if r in (c.get("regions") or []) and r.get("mask") not in (None, "ui", "world"):
                     errors.append("region mask must be ui or world")
+                off = r.get("offset", [0, 0])
+                if not (isinstance(off, list) and len(off) == 2 and all(isinstance(v, int) for v in off)):
+                    errors.append("region offset must be [dx, dy] in whole pixels")
                 rect = r.get("rect", [0, 0, 1, 1] if r.get("mask") else None)
                 if not (isinstance(rect, list) and len(rect) == 4 and 0 <= rect[0] < rect[2] <= 1
                         and 0 <= rect[1] < rect[3] <= 1):
@@ -176,15 +187,20 @@ def _row_spans(x0: int, x1: int, y: int, ignore: list[tuple[int, int, int, int]]
 
 
 def compare_region(a: tuple, b: tuple, rect: list[float], ignore: list[list[float]] | None = None,
-                   mask: bytes | None = None, want: int = 1) -> dict:
+                   mask: bytes | None = None, want: int = 1, offset: tuple[int, int] = (0, 0)) -> dict:
     """a/b are (w, h, channels, top-down pixels). Colour channels only (alpha ignored).
     With a UI mask (one byte per pixel, 1 = HUD/menu), only pixels whose mask
-    value equals `want` count: want=1 compares the HUD, want=0 the world."""
+    value equals `want` count: want=1 compares the HUD, want=0 the world.
+    offset (dx, dy) compares a's pixel (x, y) with b's (x - dx, y - dy): content
+    that a known layout change moved by whole pixels."""
     w, h, ch, pa = a
     if (b[0], b[1]) != (w, h) or (mask is not None and len(mask) != w * h):
         return dict(pixels=0, changed=0, changed_ratio=1.0, mean_abs=255.0, max_abs=255, size_mismatch=True)
     chb, pb = b[2], b[3]
     x0, y0, x1, y1 = to_rect(rect, w, h)
+    dx, dy = offset
+    if not (0 <= x0 - dx and x1 - dx <= w and 0 <= y0 - dy and y1 - dy <= h):
+        return dict(pixels=0, changed=0, changed_ratio=1.0, mean_abs=255.0, max_abs=255, size_mismatch=True)
     masks = [to_rect(r, w, h) for r in (ignore or [])]
     pixels = changed = total = biggest = 0
     selector = bytes([want])
@@ -196,7 +212,7 @@ def compare_region(a: tuple, b: tuple, rect: list[float], ignore: list[list[floa
             row_mask = mask[y * w + sx0:y * w + sx1] if mask is not None else None
             pixels += n if row_mask is None else row_mask.count(selector)
             ra = pa[(y * w + sx0) * ch:(y * w + sx1) * ch]
-            rb = pb[(y * w + sx0) * chb:(y * w + sx1) * chb]
+            rb = pb[((y - dy) * w + sx0 - dx) * chb:((y - dy) * w + sx1 - dx) * chb]
             if ch == chb and ra == rb:
                 continue
             for i in range(n):
@@ -247,36 +263,32 @@ def make_mask(with_ui: tuple, without_ui: tuple, grow: int = 1) -> bytes:
     return bytes(grown)
 
 
-OPAQUE, TRANSLUCENT, AMBIGUOUS = 1, 2, 3
+OPAQUE, TRANSLUCENT = 1, 2
 
 
-def hud_classes(mask: bytes, composite: tuple, layer: tuple, world: tuple) -> bytes:
-    """Per pixel inside the UI mask: OPAQUE where the composite equals the
-    HUD-only layer and differs from the world behind it (the HUD covers the
-    pixel); TRANSLUCENT where the composite differs from the layer (the world
-    shows through); AMBIGUOUS where composite, layer and world are all equal
-    (black over black, say), so the reference cannot show whether the HUD
-    covers it. 0 outside the mask."""
+def hud_classes(mask: bytes, composite: tuple, layer: tuple, white: tuple) -> bytes:
+    """Per pixel inside the UI mask: OPAQUE where the HUD layer is identical over
+    black (layer) and over white (white) and the composite equals it: the HUD
+    alone decides the pixel, whatever the world. TRANSLUCENT otherwise: the
+    world shows through (semi-transparency, edges) or draws over the HUD.
+    0 outside the mask."""
     w, h, ch, pa = composite
-    if any((im[0], im[1]) != (w, h) for im in (layer, world)) or len(mask) != w * h:
+    if any((im[0], im[1]) != (w, h) for im in (layer, white)) or len(mask) != w * h:
         raise ValueError("HUD frames differ in size")
     chb, pb = layer[2], layer[3]
-    chw, pw = world[2], world[3]
+    chw, pw = white[2], white[3]
     out = bytearray(w * h)
     for i in range(w * h):
         if mask[i]:
-            c = pa[i * ch:i * ch + 3]
-            if c != pb[i * chb:i * chb + 3]:
-                out[i] = TRANSLUCENT
-            else:
-                out[i] = AMBIGUOUS if c == pw[i * chw:i * chw + 3] else OPAQUE
+            hud = pb[i * chb:i * chb + 3]
+            out[i] = OPAQUE if hud == pw[i * chw:i * chw + 3] and hud == pa[i * ch:i * ch + 3] else TRANSLUCENT
     return bytes(out)
 
 
 def hud_paths(baselines: Path, set_name: str, renderer: str, sid: str, frame: int) -> dict:
     d = baselines / set_name / renderer / sid
     return dict(ref=d / f"hudref-{frame}.raw", layer=d / f"hudlayer-{frame}.raw",
-                world=d / f"hudworld-{frame}.raw", mask=d / f"hudref-{frame}.uimask")
+                white=d / f"hudwhite-{frame}.raw", mask=d / f"hudref-{frame}.uimask")
 
 
 def hud_sharp(s: dict, c: dict, out: Path, baselines: Path) -> dict:
@@ -292,7 +304,7 @@ def hud_sharp(s: dict, c: dict, out: Path, baselines: Path) -> dict:
                     detail=f"not tested: missing {', '.join(missing)} (run --make-masks for {against})")
     base_ref, base_layer = read_image(ref["ref"], True), read_image(ref["layer"], True)
     mask = load_mask(ref["mask"])[2]
-    classes = hud_classes(mask, base_ref, base_layer, read_image(ref["world"], True))
+    classes = hud_classes(mask, base_ref, base_layer, read_image(ref["white"], True))
     a_ref, a_layer = read_image(now_ref, True), read_image(now_layer, True)
     layer = compare_region(a_layer, base_layer, [0, 0, 1, 1])
 
@@ -300,17 +312,18 @@ def hud_sharp(s: dict, c: dict, out: Path, baselines: Path) -> dict:
         return compare_region(a_ref, base_ref, [0, 0, 1, 1], None,
                               bytes(1 if v == kind else 0 for v in classes), 1)
 
-    solid, seen, unsure = part(OPAQUE), part(TRANSLUCENT), part(AMBIGUOUS)
+    solid, seen = part(OPAQUE), part(TRANSLUCENT)
     regions = [dict(name="HUD layer (world hidden)", passed=within(layer, {"exact": True}), **layer),
                dict(name="opaque HUD pixels", passed=within(solid, {"exact": True}), **solid)]
     keep = lambda r: {k: r[k] for k in ("pixels", "changed", "max_abs", "mean_abs")}
+    sizes = {name: im[:2] for name, im in (("composite", a_ref), ("HUD layer", a_layer), ("reference", base_ref))}
+    detail = (f"reported, not gated: translucent HUD pixels (the world shows through or draws over) "
+              f"{seen['changed']} of {seen['pixels']} changed, max {seen['max_abs']}")
+    if len(set(sizes.values())) > 1:
+        detail = "size mismatch, not compared: " + ", ".join(f"{n} {w}x{h}" for n, (w, h) in sizes.items())
     return dict(type="hud_sharp", capture=frame, against=against,
                 passed=all(r["passed"] for r in regions), regions=regions,
-                translucent=keep(seen), ambiguous=keep(unsure),
-                detail=(f"reported, not gated: translucent HUD pixels (world shows through) "
-                        f"{seen['changed']} of {seen['pixels']} changed, max {seen['max_abs']}; "
-                        f"ambiguous pixels (reference composite, layer and world equal) "
-                        f"{unsure['changed']} of {unsure['pixels']} changed, max {unsure['max_abs']}"))
+                translucent=keep(seen), detail=detail)
 
 
 def save_mask(path: Path, w: int, h: int, mask: bytes) -> None:
@@ -399,15 +412,17 @@ def place_mesa(measure, local: Path, exe: Path, player: Path) -> None:
 def run_scenario(measure, info: dict, exe: Path, s: dict, out: Path, baselines: Path, update: bool,
                  hide_ui: str = "", restart_from: Path | None = None, record_hud: bool = False) -> dict:
     """hide_ui: "" normal run; worker-off HUD runs "shown" (composite reference),
-    "hidden" (HUD hidden in the drawn frames: UI mask) and "layer" (world hidden:
-    the HUD's own contribution). record_hud saves the HUD baselines."""
+    "hidden" (HUD hidden in the drawn frames: UI mask), "layer" (world hidden:
+    the HUD's own contribution over black) and "white" (the same over white).
+    record_hud saves the HUD baselines."""
     kind = s.get("capture_kind", "present")
     window = s["window"]
     run = dict(id=s["id"], kind=f"scenario ({s['renderer']})", mode=window["mode"], width=window["width"],
                height=window["height"], route=s.get("route", "default"), captures=s.get("captures") or [],
                golden=kind == "guest", renderer="software" if s["renderer"] == "software" else "opengl",
                vsync_via="option")
-    suffix = {"": "", "shown": "-hud-ref", "hidden": "-mask-noui", "layer": "-hud-layer"}[hide_ui or ""]
+    suffix = {"": "", "shown": "-hud-ref", "hidden": "-mask-noui", "layer": "-hud-layer",
+              "white": "-hud-white"}[hide_ui or ""]
     run_dir = out / "runs" / (s["id"] + suffix + ("-restart" if restart_from else ""))
     if run_dir.exists():
         shutil.rmtree(run_dir)
@@ -421,10 +436,21 @@ def run_scenario(measure, info: dict, exe: Path, s: dict, out: Path, baselines: 
     # The frame presented at capture N was drawn two frame hooks earlier (the
     # game double-buffers; measured on 1024x768: offsets 0, 1, 3 and 4 leave the
     # HUD in place, 2 removes it), so the HUD is hidden in exactly that frame.
-    extra = ([f"hide_ui_rel {f - MASK_DRAW_DELAY}" for f in run["captures"] if f > MASK_DRAW_DELAY]
+    delay = s.get("mask_draw_delay", MASK_DRAW_DELAY)
+    extra = ([f"hide_ui_rel {f - delay}" for f in run["captures"] if f > delay]
              if hide_ui == "hidden" else [])
-    extra += ([f"hide_world_rel {f - MASK_DRAW_DELAY}" for f in run["captures"] if f > MASK_DRAW_DELAY]
-              if hide_ui == "layer" else [])
+    extra += ([f"hide_world_rel {f - delay}" for f in run["captures"] if f > delay]
+              if hide_ui in ("layer", "white") else [])
+    extra += ["layer_white 1"] if hide_ui == "white" else []
+    # F1 Settings opened at these frames and captured once it has drawn; the
+    # game pauses meanwhile. Over black, the game draws nothing around the
+    # opening frame (HUD and world hidden), so the capture holds the overlay
+    # over a black frame only, independent of the game's picture settings.
+    for f in s.get("menu_open_at") or []:
+        extra.append(f"menu_open_rel {f}")
+        if s.get("menu_over_black"):
+            extra += [f"hide_ui_rel {g}" for g in range(max(1, f - 4), f + 5)]
+            extra += [f"hide_world_rel {g}" for g in range(max(1, f - 4), f + 5)]
     if not restart_from:
         extra += [f"option_rel {f} {OPTION_KEYS.index(k)} {v}" for f, k, v in s.get("set_options_at") or []]
         extra += [f"preset_rel {f} {PICTURE_PRESETS.index(n)}" for f, n in s.get("preset_at") or []]
@@ -437,7 +463,10 @@ def run_scenario(measure, info: dict, exe: Path, s: dict, out: Path, baselines: 
         (run_dir / "nitrogen-options.ini").write_text("".join(f"{k} {v}\n" for k, v in options.items()),
                                                       encoding="utf-8")
     from run_runtime import runtime_environment
-    env = runtime_environment(info["work"], render_worker=False if hide_ui else None)
+    # Frame-exact hiding (HUD runs, and the black frame under F1 Settings)
+    # needs the worker-off draw order.
+    exact = hide_ui or s.get("menu_over_black")
+    env = runtime_environment(info["work"], render_worker=False if exact else None)
     env.pop("PSX_VSYNC", None)
     env.update(NITROGEN_MEASURE_CONFIG=str(config), NITROGEN_OPTIONS_FILE=str(run_dir / "nitrogen-options.ini"),
                NITROGEN_NATIVE_DISC_BIN=str(info["disc_bin"]),
@@ -484,15 +513,13 @@ def run_scenario(measure, info: dict, exe: Path, s: dict, out: Path, baselines: 
                 with_ui = read_image(shown, kind == "present")
                 mask = make_mask(with_ui, read_image(captured, kind == "present"))
                 save_mask(paths["mask"], with_ui[0], with_ui[1], mask)
-                shutil.copyfile(captured, paths["world"])
                 checks.append(dict(type="image", capture=frame, passed=None,
-                                   detail=f"UI mask and HUD world recorded ({mask.count(1)} of {len(mask)} pixels)"))
+                                   detail=f"UI mask recorded ({mask.count(1)} of {len(mask)} pixels)"))
             else:
-                target = paths["ref" if hide_ui == "shown" else "layer"]
+                target = paths[{"shown": "ref", "layer": "layer", "white": "white"}[hide_ui]]
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(captured, target)
-                checks.append(dict(type="image", capture=frame, passed=None,
-                                   detail=f"HUD {'reference' if hide_ui == 'shown' else 'layer'} recorded"))
+                checks.append(dict(type="image", capture=frame, passed=None, detail=f"HUD {hide_ui} recorded"))
     for c in [] if hide_ui else ((s.get("restart") or {}).get("checks") or []) if restart_from else (s.get("checks") or []):
         if c["type"] == "hud_sharp":
             checks.append(hud_sharp(s, c, out, baselines))
@@ -543,7 +570,8 @@ def run_scenario(measure, info: dict, exe: Path, s: dict, out: Path, baselines: 
                                         detail="not tested: no UI mask (run --make-masks)"))
                     continue
                 stats = compare_region(a, b, r.get("rect", [0, 0, 1, 1]), [i["rect"] for i in c.get("ignore") or []],
-                                       mask if r.get("mask") else None, 1 if r.get("mask") == "ui" else 0)
+                                       mask if r.get("mask") else None, 1 if r.get("mask") == "ui" else 0,
+                                       tuple(r.get("offset", (0, 0))))
                 regions.append(dict(name=r.get("name", "region"), passed=within(stats, c.get("tolerance") or
                                                                                  {"exact": True}), **stats))
             checks.append(dict(type="image", capture=c["capture"],
@@ -629,10 +657,11 @@ def main(argv=None) -> int:
         place_mesa(measure, info["local"], exe, info["executable"])
     results = []
     for s in scenarios:
-        if args.make_masks:     # worker-off reference, HUD hidden and world hidden, same frames
+        if args.make_masks:     # worker-off reference, HUD hidden, world hidden over black and white
             run_scenario(measure, info, exe, s, out, baselines, False, "shown", record_hud=True)
             run_scenario(measure, info, exe, s, out, baselines, False, "hidden", record_hud=True)
-            r = run_scenario(measure, info, exe, s, out, baselines, False, "layer", record_hud=True)
+            run_scenario(measure, info, exe, s, out, baselines, False, "layer", record_hud=True)
+            r = run_scenario(measure, info, exe, s, out, baselines, False, "white", record_hud=True)
         else:
             if any(c.get("type") == "hud_sharp" for c in s.get("checks") or []) and not args.update_baselines:
                 run_scenario(measure, info, exe, s, out, baselines, False, "shown")

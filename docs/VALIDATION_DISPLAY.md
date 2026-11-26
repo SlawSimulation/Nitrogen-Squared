@@ -35,8 +35,14 @@ further change shows Custom. Reset to original applies the Original preset.
 
 - Mesa 26.3.1 llvmpipe (checksum-verified) placed only beside private test
   executables; OpenGL 4.6 Core; deterministic: repeated runs are byte-identical.
-- `tools/measurement/n2test.py` runs real-game scenarios (18 files) and labels
-  evidence; captures and baselines are private in `.local`.
+- `tools/measurement/n2test.py` runs real-game scenarios (26 files) and labels
+  evidence; captures and baselines are private in `.local`. Routes: default and
+  long gameplay, and `menus` (anchored on the first menu scanout after the
+  legal/title card: attract title, main menu, ship and level selection, three
+  help pop-ups, level caption). The legal/title card is shown once with no
+  repeatable frame, so it has no route. Scenarios can open the F1 menu at a
+  frame (`menu_open_at`), and image regions can compare content that moved by
+  a stated `offset`.
 - HUD comparison (`hud_sharp`). A test-only switch in the adapted renderer
   collapses either the primitives Nitrogen tags as HUD/menu (bit 0) or every
   other primitive (bit 1) off screen; every VRAM sync and batch step still runs
@@ -49,22 +55,31 @@ further change shows Custom. Reset to original applies the Original preset.
   That misalignment, plus translucent glass, caused the earlier wrong
   conclusion that Smooth blurred the weapon model.
   For a reference scenario, `--make-masks` records four private files per
-  capture: the composite (`hudref`), the HUD alone over a cleared frame
-  (`hudlayer`; the game never clears its draw buffer, so the world-hidden
-  frame clears the draw area to black first, otherwise it would still hold the
-  world from two frames earlier), the world alone (`hudworld`) and the mask
-  (where composite and world differ, grown by one pixel). The check then:
+  capture from four worker-off runs: the composite (`hudref`), the HUD alone
+  over a frame cleared to black (`hudlayer`; the game never clears its draw
+  buffer, so the world-hidden frame clears the draw area first, otherwise it
+  would still hold the world from two frames earlier), the same HUD layer over
+  a frame cleared to white (`hudwhite`, a second test-only bit) and the mask
+  (where the composite and a HUD-hidden run differ, grown by one pixel). The
+  check then:
   1. requires the HUD layer to be byte-identical over the whole frame;
   2. requires proven opaque HUD pixels to be byte-identical in the composite.
-     Opaque means inside the mask, the composite equal to the HUD layer and
-     different from the world behind it;
-  3. reports, without gating, translucent pixels (composite differs from the
-     layer: the world shows through) and ambiguous pixels (composite, layer and
-     world all equal). Ambiguous pixels are in practice black HUD over black
-     world, mostly at the one-pixel mask edge: black composited over black
-     looks the same whether the HUD covers the pixel or not, so the reference
-     cannot establish opacity there. Counting them as opaque would test the
-     world, not the HUD.
+     Opacity is proven, not inferred: inside the mask, the reference HUD layer
+     is identical over black and over white, and the reference composite equals
+     it (nothing drawn over the HUD). Every PS1 blend mode is monotone in the
+     background colour, so a pixel equal over both extremes is the same over any
+     world;
+  3. reports, without gating, translucent pixels (everything else in the mask:
+     the world shows through or draws over the HUD).
+  This replaces the earlier inference (composite equal to the black-background
+  layer and different from the world). On the menus it misclassified dark
+  translucent panels as opaque: where the world behind rounds to black, one
+  reference frame cannot show the translucency, and Smooth then changed those
+  "opaque" pixels. The white background shows it, and the separate
+  "ambiguous" class is no longer needed. The new rule only removes pixels the
+  reference cannot prove opaque; the HUD-layer check is unchanged. Re-recording
+  with the rebuilt binary reproduced every existing `hudref`, `hudlayer` and
+  mask file of the five reference scenarios byte-for-byte.
   "HUD" means primitives Nitrogen tags as HUD/menu. A few untagged effect
   quads drawn above the HUD (mid-screen pause effects) follow the world filter;
   untagged 2D rectangles keep nearest sampling anyway.
@@ -79,11 +94,17 @@ further change shows Custom. Reset to original applies the Original preset.
 | Reset to original mid-game | byte-identical to the original at every later capture; original values saved |
 | Persistence | a mid-game F1-equivalent change is saved and a real restart from that file renders byte-identically to the same settings set before launch |
 | Determinism | every V4 scenario re-run matches its recorded baseline exactly |
-| Smooth keeps the HUD identical (frames 400/1600/2700, against the original) | pass. HUD layer byte-identical over the whole frame at all three. Proven opaque HUD pixels byte-identical: 17,548 / 19,723 / 18,118, i.e. 71.9% / 75.2% / 74.4% of the 24,408 / 26,220 / 24,368 mask pixels. Translucent (reported): 1,568 of 6,846 / 2,289 of 6,476 / 1,721 of 6,250 changed, max 32 / 192 / 32 levels, all from the smoothed world behind the glass. Ambiguous (reported): 14 / 21 / 0 pixels (0.06% / 0.08% / 0%), of which 2 / 7 / 0 changed by at most 8 / 24 levels |
+| Smooth keeps the gameplay HUD identical, 1024x768 (frames 400/1600/2700, against the original) | pass. HUD layer byte-identical over the whole frame at all three. Proven opaque HUD pixels byte-identical: 17,548 / 19,723 / 18,118 (71.9% / 75.2% / 74.4% of the mask). Translucent (reported): 1,570 of 6,860 / 2,296 of 6,497 / 1,721 of 6,250 changed, max 32 / 192 / 32 levels, from the smoothed world behind the glass |
+| Same at 2560x1080 (21:9) | pass. HUD layer byte-identical; opaque 70,192 / 78,925 / 72,209 exact (78.2% / 82.2% / 81.0%); translucent 4,760 of 19,624 / 4,139 of 17,102 / 4,833 of 16,895 changed, max 32 / 149 / 40 |
+| Same at 3840x1080 (32:9) | pass. HUD layer byte-identical; opaque 70,192 / 78,928 / 72,256 exact (78.2% / 82.2% / 81.0%); translucent 5,154 of 19,624 / 5,471 of 17,101 / 7,164 of 16,910 changed, max 32 / 51 / 40. Because the HUD layer is byte-identical, the HUD sits exactly where Original puts it at that size; the world changed in about 30% of pixels |
+| Smooth keeps the menu HUD identical (menus route, 8 screens: attract title, main menu, ship and level selection, three help pop-ups, level caption) | pass at 1024x768 and 2560x1080. HUD layer byte-identical at all 16 captures. Opaque exact: 2,544 / 15,671 / 12,192 / 19,600 / 37,612 / 17,588 / 42,552 / 27,449 at 1024x768 and 10,176 / 62,710 / 48,768 / 78,400 / 150,448 / 70,352 / 170,208 / 109,798 at 2560x1080. The menus are mostly translucent panels over moving backdrops (for example 34,143 of 177,141 translucent pixels changed on a help screen). Untagged by Nitrogen, and therefore filtered like the world: the attract logo and frame, the main-menu rings and the level caption |
+| F1 settings (Picture section) with Smooth | pass. The F1 overlay is drawn after presentation and effects, so the texture filter never reaches it. Above the Picture values and outside the panel it is byte-identical to the original (563,200 + 122,080 + 4,818 pixels). Smooth adds one help line under Textures, so the rest of the panel moves down 19 px; compared at that offset it is byte-identical too (64,525 pixels). Only the Preset/Textures values and the scrollbar thumb differ, as designed |
+| Finding: top row of the attract capture with the render worker on | at frame 150 of the menus route (1024x768), row 0 of the worker-on capture is sometimes black and sometimes holds picture content, with the original settings as well as Smooth (original: black in 3 runs, content in 1; Smooth: black in 1, content in 3). Each run that differs from its baseline fails the whole-frame self-check by exactly that row (1,024 pixels); in the final re-run the Smooth scenario matched. Worker-off captures of the same frame are stable in every run, and the HUD checks there pass. It is render-worker timing in the capture, not a Smooth effect (an earlier note blaming bilinear sampling was wrong). The check is kept and reported as failing; it is not loosened |
+| Host display change during the regression | the server's remote-desktop display dropped to 1280x720 during the full run. The software-renderer scenario then got a 1020x536 window, one HUD reference run changed size mid-run, and the F1 panel layout moved; all were reported as failures (size mismatch), none passed at the wrong size. Re-run afterwards, all three pass, so all 26 scenarios have passed on the final build |
 | Weapon model under Smooth | sharp: it is drawn at ranks 427/428 inside the gauge and already tagged HUD, so it keeps nearest sampling; it is byte-identical in the HUD layer. The earlier note that it was smoothed was wrong (misaligned worker-on/off masks plus translucent glass); no rendering change was made |
-| HUD reference reproducibility | re-recording the original 1024x768 references reproduced all 12 existing files byte-for-byte; only the new world images were added |
+| HUD reference reproducibility | re-recording the five original HUD references (gameplay at three sizes, menus at two) after the rebuild reproduced every existing composite, HUD layer and mask file byte-for-byte; only the white layers were added. (Normal worker-on captures are not re-recorded by this step; they are checked by the regression run) |
 | Dithering and the HUD | the PS1 dithers HUD primitives too, so those scenarios compare the world only |
-| Unit tests | 298 run, 32 skipped; only the 7 pre-existing test_portable git-fixture errors (also present without these changes); source audit passes (239 files) |
+| Unit tests | 306 run, 0 skipped (C++ compiler available); only the 7 pre-existing test_portable git-fixture errors (also present without these changes; left untouched); source audit passes (247 files) |
 
 Not tested here: the owner's GPU and monitor (real colour, scanline moiré at
 32:9, performance). Software-rendered timings are not meaningful. Optional

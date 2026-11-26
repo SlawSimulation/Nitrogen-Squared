@@ -1,0 +1,44 @@
+{
+  "id": "original-mesa-f1-1024x768",
+  "description": "F1 Settings (Display and Picture sections) over a black game frame, original settings (Mesa llvmpipe).",
+  "options": {},
+  "baseline_set": "original",
+  "checks": [
+    {
+      "type": "route_completed"
+    },
+    {
+      "type": "image",
+      "capture": 400,
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "exact": true
+      }
+    }
+  ],
+  "renderer": "mesa",
+  "window": {
+    "mode": "windowed",
+    "width": 1024,
+    "height": 768
+  },
+  "route": "default",
+  "capture_kind": "present",
+  "captures": [
+    400
+  ],
+  "menu_open_at": [
+    400
+  ],
+  "menu_over_black": true
+}

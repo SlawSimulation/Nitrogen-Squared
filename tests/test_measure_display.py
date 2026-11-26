@@ -52,6 +52,16 @@ class RouteTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             report.route_config("unknown")
 
+    def test_menu_route_anchors_on_the_first_menu_scanout(self):
+        menus = report.route_config("menus")
+        self.assertEqual([(s["kind"], s["a"]) for s in menus["stages"]],
+                         [(0, report.TITLE_WIDTH), (0, report.MENU_WIDTH)])
+        self.assertEqual(menus["stages"][-1]["steps"], report.MENU_STEPS)
+        self.assertEqual(menus["stop_rel"], sum(f for _, f in report.MENU_STEPS))
+        self.assertTrue(all(c < menus["stop_rel"] for c in menus["captures_rel"]))
+        with self.assertRaises(ValueError):
+            report.route_config("title")
+
     def test_config_lines_carry_stages_steps_and_relative_schedule(self):
         with tempfile.TemporaryDirectory() as tmp:
             run_dir = Path(tmp) / ".local" / "run"

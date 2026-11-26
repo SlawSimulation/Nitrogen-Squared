@@ -96,13 +96,15 @@ static void nitrogen_bind_framebuffer(GLenum target,GLuint framebuffer)
  * render of the same deterministic frame yields the exact UI mask by
  * difference. Bit 1 collapses everything else instead, leaving the HUD's own
  * contribution. The game never clears its draw buffer (the tunnel covers it),
- * so a world-hidden frame first clears the draw area to black; otherwise the
+ * so a world-hidden frame first clears the draw area to black (bit 2: white,
+ * so a HUD pixel equal over both backgrounds is proven opaque); otherwise the
  * buffer would still hold the world drawn there two frames earlier. Every
  * VRAM sync and batch step still runs. Always 0 in normal play. */
-static volatile int nitrogen_test_layers_hidden, nitrogen_test_layer_clear;
+static volatile int nitrogen_test_layers_hidden, nitrogen_test_layer_clear, nitrogen_test_layer_white;
 void nitrogen_test_hide_ui(int mode)
 {
     if ((mode & 2) && !(nitrogen_test_layers_hidden & 2)) nitrogen_test_layer_clear = 1;
+    nitrogen_test_layer_white = (mode & 4) != 0;
     nitrogen_test_layers_hidden = mode & 3;
 }
 static int nitrogen_world_skip(unsigned flags)
@@ -119,7 +121,8 @@ static void nitrogen_test_clear_draw_area(void)
     glEnable(GL_SCISSOR_TEST);
     glScissor(s_area_x1 * s_hr_scale, s_area_y1 * s_hr_scale,
               (s_area_x2 - s_area_x1 + 1) * s_hr_scale, (s_area_y2 - s_area_y1 + 1) * s_hr_scale);
-    glClearColor(0.f, 0.f, 0.f, 1.f);
+    const GLfloat v = nitrogen_test_layer_white ? 1.f : 0.f;
+    glClearColor(v, v, v, 1.f);
     glClear(GL_COLOR_BUFFER_BIT);
     glClearColor(previous[0], previous[1], previous[2], previous[3]);
     glDisable(GL_SCISSOR_TEST);

@@ -1,0 +1,145 @@
+{
+  "id": "v4-smooth-2560x1080",
+  "description": "V4-a Smooth textures at 21:9 (2560x1080): the 3D world changes; the HUD's own pixels (world-hidden HUD layer and proven opaque HUD pixels, render worker off) stay identical to the original at the same resolution, so HUD position and sharpness are unchanged. Translucent and ambiguous HUD pixels are reported, not gated.",
+  "renderer": "mesa",
+  "window": {
+    "mode": "windowed",
+    "width": 2560,
+    "height": 1080
+  },
+  "options": {
+    "texture_filter": 1
+  },
+  "route": "default",
+  "capture_kind": "present",
+  "captures": [
+    400,
+    1600,
+    2700
+  ],
+  "baseline_set": "v4",
+  "checks": [
+    {
+      "type": "route_completed"
+    },
+    {
+      "type": "page_at",
+      "frame": 400,
+      "page": 4
+    },
+    {
+      "type": "image",
+      "capture": 400,
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "exact": true
+      }
+    },
+    {
+      "type": "image",
+      "capture": 1600,
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "exact": true
+      }
+    },
+    {
+      "type": "image",
+      "capture": 2700,
+      "regions": [
+        {
+          "name": "whole",
+          "rect": [
+            0,
+            0,
+            1,
+            1
+          ]
+        }
+      ],
+      "tolerance": {
+        "exact": true
+      }
+    },
+    {
+      "type": "image",
+      "capture": 400,
+      "against": "original-mesa-2560x1080",
+      "regions": [
+        {
+          "name": "world",
+          "mask": "world"
+        }
+      ],
+      "tolerance": {
+        "expect_change": true
+      }
+    },
+    {
+      "type": "image",
+      "capture": 1600,
+      "against": "original-mesa-2560x1080",
+      "regions": [
+        {
+          "name": "world",
+          "mask": "world"
+        }
+      ],
+      "tolerance": {
+        "expect_change": true
+      }
+    },
+    {
+      "type": "image",
+      "capture": 2700,
+      "against": "original-mesa-2560x1080",
+      "regions": [
+        {
+          "name": "world",
+          "mask": "world"
+        }
+      ],
+      "tolerance": {
+        "expect_change": true
+      }
+    },
+    {
+      "type": "hud_sharp",
+      "capture": 400,
+      "against": "original-mesa-2560x1080",
+      "against_set": "original"
+    },
+    {
+      "type": "hud_sharp",
+      "capture": 1600,
+      "against": "original-mesa-2560x1080",
+      "against_set": "original"
+    },
+    {
+      "type": "hud_sharp",
+      "capture": 2700,
+      "against": "original-mesa-2560x1080",
+      "against_set": "original"
+    }
+  ]
+}
