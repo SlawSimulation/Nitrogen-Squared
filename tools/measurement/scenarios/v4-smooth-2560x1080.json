@@ -1,6 +1,6 @@
 {
   "id": "v4-smooth-2560x1080",
-  "description": "V4-a Smooth textures at 21:9 (2560x1080): the 3D world changes; the HUD's own pixels (world-hidden HUD layer and proven opaque HUD pixels, render worker off) stay identical to the original at the same resolution, so HUD position and sharpness are unchanged. Translucent and ambiguous HUD pixels are reported, not gated.",
+  "description": "V4-a Smooth textures at 21:9 (2560x1080): the 3D world changes; the HUD's own pixels (world-hidden HUD layer and proven opaque HUD pixels, render worker off) stay identical to the original at the same resolution, so HUD position and sharpness are unchanged. Translucent HUD pixels are reported, not gated.",
   "renderer": "mesa",
   "window": {
     "mode": "windowed",

@@ -19,18 +19,132 @@ software rendering (Mesa llvmpipe): the original look stays pixel-identical at
 4:3, 16:9, 21:9 and 32:9, each setting changes the picture, combinations work
 at 21:9 and 32:9, Reset restores the original exactly, and a change made
 mid-game is saved and survives a restart. Software rendering is not your GPU,
-so an optional final look on your PC is listed below (check N2-DISPLAY-V4).
+so seven checks on your own PC are listed below (N2-DISPLAY-V4 and N2-DISPLAY-V4-*).
 Under Smooth the HUD itself stays sharp and unchanged, including the 3D weapon
 model inside the weapon gauge (an earlier note saying it was smoothed was
-wrong). Semi-transparent HUD parts, such as the gauge glass, still show the
+wrong). This is checked automatically at 4:3, 16:9, 21:9 and 32:9. Semi-transparent HUD parts, such as the gauge glass, still show the
 smoothed world behind them; that is expected.
 
-Optional check on your PC (check N2-DISPLAY-V4):
-1. Install the V4 candidate in your test copy and let it rebuild once.
-2. In F1 Settings, Picture, try each preset and a few individual settings
-   while playing; then press Reset to original.
-3. Look for anything that seems wrong on your monitor (for example scanline
-   moiré at 32:9 or colour banding) and tell me what you see.
+Checks on your PC (N2-DISPLAY-V4, then N2-DISPLAY-V4-TEXTURES, -COLOUR,
+-SCANLINES, -TONE, -PACING and -PERSIST). You run these yourself on the
+GTX 1080 Ti / 49-inch PC. Nothing connects to that PC, and no automated tool
+runs there unless you start it yourself.
+
+Before you start:
+- Install: in GitHub Actions, open the successful Release run for the dev
+  commit you are testing (849b15b or a later dev commit), download its
+  dev-<commit> artifact, and overlay the Windows ZIP onto a copy of your test
+  folder, keeping .local. The launcher rebuilds the game once; saves are kept.
+- Copy .local/nitrogen-options.ini somewhere safe, so you can put your usual
+  settings back afterwards.
+- Note once, for every result: the build (F1, Debug, About This Build), the
+  NVIDIA driver version (NVIDIA Control Panel, Help, System Information), the
+  desktop resolution and refresh rate, and the window mode.
+- The settings are in F1, System, Settings, under Picture.
+
+Screenshots and notes:
+- Take screenshots in Windowed or Borderless if Fullscreen ones come out
+  black. Win+Alt+PrtScn saves the game window as a PNG in Videos\Captures;
+  Win+PrtScn saves the whole screen in Pictures\Screenshots. Keep them at full
+  size and do not crop or scale them.
+- For a before/after pair, pause the game and change the setting in F1, so
+  the two screenshots differ only by that setting. If the pause menu covers
+  the part you want, take both at the same place in level 1 instead.
+- Name files after the check, setting and shape, for example
+  N2-DISPLAY-V4-TEXTURES_smooth_32x9.png and N2-DISPLAY-V4-TEXTURES_sharp_32x9.png.
+- Keep them in .local/owner-checks/v4 inside your Nitrogen-Squared folder:
+  .local is never published and updates keep it. Screenshots are game imagery,
+  so do not attach them to GitHub issues, pull requests or dashboard notes;
+  share them with me privately only if you want to.
+- Moiré, flicker and stutter do not show in screenshots. Describe them, or
+  take a phone photo or video of the screen.
+- Record each check in the Projects Dashboard as Pass, Fail or Blocked, with
+  a short note: what you saw, the settings, aspect and window mode, and the
+  screenshot names. Submit through the dashboard's review step, as usual.
+
+N2-DISPLAY-V4: GTX 1080 Ti compatibility and Original rendering.
+1. After the rebuild the game starts normally. F1 Picture shows Preset
+   Original PS1 with Reset to original greyed out: Textures Sharp (original),
+   Dithering Original, Colour model Original, Scanlines off, Brightness 100%.
+2. With your usual settings (32:9 Fullscreen, Aspect Auto), play the opening
+   movie, the menus and some of level 1. Everything looks exactly as before V4.
+3. Take an Original screenshot in level 1 as the reference for the other checks.
+4. Optional, the strongest check: download the dev source, then run
+   measure_display.py --preset v1 --baseline <your V0 quick report.json> as for
+   N2-DISPLAY-V1. It uses its own all-original settings file, and its summary
+   must say the golden screenshots are identical to the baseline.
+
+N2-DISPLAY-V4-TEXTURES: Sharp versus Smooth.
+1. In level 1 at 32:9, take a Sharp and a Smooth screenshot of the same frame;
+   repeat with Aspect Original 4:3.
+2. Smooth softens the tunnel and 3D models. The score, gauges, weapon panel,
+   the 3D weapon model, text and icons keep crisp pixel edges. The gauge glass
+   shows the smoothed world behind it; that is expected.
+3. With Smooth on, check the main menu, ship and level selection, a help
+   pop-up and F1 itself: text and icons stay crisp. The title logo, the
+   main-menu rings and the level caption are not marked as HUD and may soften;
+   say whether that bothers you.
+4. Look for shimmer at seams, colour bleeding at texture edges, a flickering
+   top line on the title screen, or black or flashing textures.
+
+N2-DISPLAY-V4-COLOUR: CRT, Composite and Trinitron.
+1. Reset to original, then choose Colour model CRT, Composite and Trinitron in
+   turn at the same place; take a screenshot of each.
+2. Each looks different from Original and from the others. Bright areas do not
+   flatten into blocks, tunnel gradients do not band, and HUD colours stay
+   readable.
+3. Play the opening movie with one model on and note whether it changes too.
+
+N2-DISPLAY-V4-SCANLINES: strength and moiré, particularly at 32:9.
+1. Turn Scanlines on and try Strength 10%, 40%, 70% and 100%: the lines grow
+   steadily stronger.
+2. At 32:9 Fullscreen, and again with Aspect Original 4:3 and its black bars,
+   look for moiré (wavy bands), uneven spacing, flicker in motion and lines in
+   the black bars.
+3. Repeat in a window with an uneven size, such as 1600x900. By design,
+   scanlines fade in with size and stay faint below about twice the original
+   height (about 480 px of game area).
+4. Take screenshots at 40% and 100%; photograph any moiré with a phone, and
+   note the window size and refresh rate.
+
+N2-DISPLAY-V4-TONE: brightness and dithering.
+1. Try Brightness 80%, 100% and 130% at the same place. The picture gets
+   darker or lighter; whites do not clip into flat areas and dark areas do not
+   crush to black.
+2. Try Dithering Original, Off (true colour) and Fine on shaded tunnel walls.
+   Off removes the PS1 dot pattern (smooth gradients, possibly some banding);
+   Fine draws the pattern per pixel of the 3D render resolution, so it is
+   finer, especially at higher Render resolution.
+3. Take a screenshot of each dithering mode; zoom in to compare.
+
+N2-DISPLAY-V4-PACING: performance and frame pacing.
+1. Turn on F1, Debug, Performance Overlay. In Fullscreen with Fullscreen
+   refresh Smoothest for 60 fps, play part of level 1 with the Original look;
+   note the Display FPS and F1's refreshes per game frame.
+2. Then use the heaviest mix: Smooth, Trinitron, Scanlines 100%, Brightness
+   130%, Dithering Fine; optionally Render resolution 200% as well. Play the
+   same part for a minute and note the FPS, whether motion stays even, and GPU
+   use (Task Manager, Performance, GPU).
+3. Change settings while playing and note any hitch.
+4. Level-entry stutter is already an open issue; say whether it is unchanged,
+   better or worse with these settings.
+
+N2-DISPLAY-V4-PERSIST: presets, persistence and reset.
+1. Choose each preset and check what it fills in: Original PS1 (everything
+   original); Smooth (Smooth textures, Dithering Off); CRT (CRT colour,
+   Scanlines 40%); Composite TV (Composite colour, Scanlines 30%, Brightness
+   105%). Every other Picture value stays original. Changing any one value
+   shows Custom.
+2. Set your own mix, quit with F1, System, Quit Application, and start again
+   from the launcher: the same values and the same look come back.
+   .local/nitrogen-options.ini holds them as texture_filter, dithering,
+   screen_model, scanlines and brightness.
+3. Press Reset to original: all five return to the original values, the
+   button greys out and the picture matches your N2-DISPLAY-V4 reference.
+   Restart once more: it stays original.
+4. Your other display settings (window mode, aspect, HUD) are not changed by
+   presets or Reset. Afterwards, restore your saved nitrogen-options.ini if
+   you like.
 
 **Display V2 — smoother motion and the F1 bar (dev, still 0.2.2).**
 The game makes 59.94 frames a second; a 144 Hz screen must show each one for
@@ -1222,22 +1336,112 @@ Instructions for future maintainers and assistants:
     "runtime": "Windows / Linux x64 \u00b7 USA disc",
     "cart": "",
     "createdAt": "2026-11-10",
-    "description": "Repairs future source mtimes behind the CMake loop, uses 80% desktop thread budgets and displays build stage/detail/workers/elapsed. Retains disc-derived game icon and interrupted-setup repairs. CI and owner verification pending. Corrects pre-1980 bundled-file ZIP metadata rejection; d83eedd source/UI and runtime checks passed before packaging failed. Adds multi-BIN (per-track) CUE import; player and CI verification pending. Adds V0 display measurement tooling (no runtime change). V1 adds Aspect and VSync settings and reports the actual 3D size (validated on the owner's PC). V1.1 adds a HUD position setting (validated on the owner's PC). V1.2 gives the game's Video menu and F1 Settings the same display options and adds the game's Extras to F1 (validated on the owner's PC). V2 adds a Fullscreen refresh setting for even frame pacing and lets F1 reveal an autohidden menu bar; owner verification pending. V4 adds optional Picture settings (texture filtering, dithering, colour model, scanlines, brightness, presets, reset), automatically tested through software rendering; an optional real-GPU look is pending."
+    "description": "Repairs future source mtimes behind the CMake loop, uses 80% desktop thread budgets and displays build stage/detail/workers/elapsed. Retains disc-derived game icon and interrupted-setup repairs. CI and owner verification pending. Corrects pre-1980 bundled-file ZIP metadata rejection; d83eedd source/UI and runtime checks passed before packaging failed. Adds multi-BIN (per-track) CUE import; player and CI verification pending. Adds V0 display measurement tooling (no runtime change). V1 adds Aspect and VSync settings and reports the actual 3D size (validated on the owner's PC). V1.1 adds a HUD position setting (validated on the owner's PC). V1.2 gives the game's Video menu and F1 Settings the same display options and adds the game's Extras to F1 (validated on the owner's PC). V2 adds a Fullscreen refresh setting for even frame pacing and lets F1 reveal an autohidden menu bar; owner verification pending. V4 adds optional Picture settings (texture filtering, dithering, colour model, scanlines, brightness, presets, reset), automatically tested through software rendering; real-GPU owner checks N2-DISPLAY-V4 and N2-DISPLAY-V4-* (textures, colour, scanlines, tone, pacing, persistence) are pending."
   },
   "checks": [
     {
       "id": "N2-DISPLAY-V4",
-      "title": "Optional: look at the V4 Picture settings on the real GPU",
+      "title": "V4 on the GTX 1080 Ti: starts, and the Original look is unchanged",
       "area": "Picture settings (V4)",
-      "required": false,
+      "required": true,
+      "priority": "high",
+      "steps": [
+        "Install the dev-<commit> Release artifact over a copy of your test folder, keeping .local; let the launcher rebuild the game once. Back up .local/nitrogen-options.ini.",
+        "Open F1, System, Settings, Picture: Preset Original PS1, Reset to original greyed out, Textures Sharp, Dithering Original, Colour model Original, Scanlines off, Brightness 100%.",
+        "At your usual 32:9 Fullscreen, Aspect Auto, play the opening movie, the menus and some of level 1.",
+        "Take an Original screenshot in level 1 as the reference for the other V4 checks.",
+        "Optional: run measure_display.py --preset v1 --baseline <V0 quick report.json> from the dev source, as for N2-DISPLAY-V1."
+      ],
+      "expected": "The game builds and starts on the GTX 1080 Ti, every Picture setting shows its original value, the picture looks exactly as before V4, and the optional tool reports the golden screenshots identical to V0.",
+      "context": "Dev at 0.2.2; one game rebuild. Automated software-rendered (Mesa) checks pass; this is the real-GPU check on the owner's GTX 1080 Ti / 49-inch PC, run locally by the owner. Keep screenshots private in .local/owner-checks/v4; note build, driver, resolution, refresh and window mode."
+    },
+    {
+      "id": "N2-DISPLAY-V4-TEXTURES",
+      "title": "Sharp versus Smooth: world smoothed, HUD and menus sharp",
+      "area": "Picture settings (V4)",
+      "required": true,
       "priority": "normal",
       "steps": [
-        "In your test copy, install the V4 candidate and let the launcher rebuild the game once. Preserve .local and your saves.",
-        "In F1 Settings, Picture, try each preset and a few individual settings while playing at your usual aspect.",
-        "Press Reset to original and check the picture looks exactly as before."
+        "In level 1 at 32:9, take a Sharp and a Smooth screenshot of the same paused frame; repeat with Aspect Original 4:3.",
+        "With Smooth, check the score, gauges, weapon panel, 3D weapon model, text and icons.",
+        "With Smooth, check the main menu, ship and level selection, a help pop-up and F1 itself.",
+        "Look for shimmer at seams, colour bleeding at texture edges, a flickering top line on the title screen, or black or flashing textures."
       ],
-      "expected": "Each setting changes the picture as named, the HUD and menus stay sharp under Smooth, nothing flickers or bands badly at 32:9, and Reset to original restores the original look.",
-      "context": "Dev at 0.2.2; one more game rebuild. Automated software-rendered checks already pass; this is an optional real-GPU look."
+      "expected": "Smooth softens the tunnel and 3D models; the HUD, weapon model, menu text and icons keep crisp pixel edges (gauge glass shows the smoothed world behind it, as expected). The title logo, main-menu rings and level caption may soften; note whether that bothers you. No artefacts.",
+      "context": "Dev at 0.2.2; one game rebuild. Automated software-rendered (Mesa) checks pass; this is the real-GPU check on the owner's GTX 1080 Ti / 49-inch PC, run locally by the owner. Keep screenshots private in .local/owner-checks/v4; note build, driver, resolution, refresh and window mode."
+    },
+    {
+      "id": "N2-DISPLAY-V4-COLOUR",
+      "title": "CRT, Composite and Trinitron colour models",
+      "area": "Picture settings (V4)",
+      "required": true,
+      "priority": "normal",
+      "steps": [
+        "Reset to original, then choose Colour model CRT, Composite and Trinitron in turn at the same place; screenshot each.",
+        "Compare them with your Original reference.",
+        "Play the opening movie with one model on and note whether it changes too."
+      ],
+      "expected": "Each model looks different from Original and from the others; bright areas do not flatten, tunnel gradients do not band and HUD colours stay readable.",
+      "context": "Dev at 0.2.2; one game rebuild. Automated software-rendered (Mesa) checks pass; this is the real-GPU check on the owner's GTX 1080 Ti / 49-inch PC, run locally by the owner. Keep screenshots private in .local/owner-checks/v4; note build, driver, resolution, refresh and window mode."
+    },
+    {
+      "id": "N2-DISPLAY-V4-SCANLINES",
+      "title": "Scanline strength and moir\u00e9, especially at 32:9",
+      "area": "Picture settings (V4)",
+      "required": true,
+      "priority": "normal",
+      "steps": [
+        "Turn Scanlines on and try Strength 10%, 40%, 70% and 100%.",
+        "At 32:9 Fullscreen, and with Aspect Original 4:3 and its bars, look for moir\u00e9, uneven spacing, flicker in motion and lines in the bars.",
+        "Repeat in a window with an uneven size such as 1600x900; by design scanlines stay faint below about 480 px of game height.",
+        "Screenshot 40% and 100%; photograph any moir\u00e9 with a phone and note the window size and refresh rate."
+      ],
+      "expected": "Lines grow steadily stronger with Strength and stay evenly spaced without moir\u00e9 or flicker at 32:9 Fullscreen; any moir\u00e9 at other sizes is reported with its size.",
+      "context": "Dev at 0.2.2; one game rebuild. Automated software-rendered (Mesa) checks pass; this is the real-GPU check on the owner's GTX 1080 Ti / 49-inch PC, run locally by the owner. Keep screenshots private in .local/owner-checks/v4; note build, driver, resolution, refresh and window mode."
+    },
+    {
+      "id": "N2-DISPLAY-V4-TONE",
+      "title": "Brightness and dithering",
+      "area": "Picture settings (V4)",
+      "required": true,
+      "priority": "normal",
+      "steps": [
+        "Try Brightness 80%, 100% and 130% at the same place.",
+        "Try Dithering Original, Off (true colour) and Fine on shaded tunnel walls.",
+        "Screenshot each dithering mode and zoom in to compare."
+      ],
+      "expected": "Brightness darkens or lightens without clipping whites or crushing darks; Dithering Off removes the PS1 dot pattern (smooth gradients, possibly slight banding) and Fine makes the pattern finer (per 3D-render pixel).",
+      "context": "Dev at 0.2.2; one game rebuild. Automated software-rendered (Mesa) checks pass; this is the real-GPU check on the owner's GTX 1080 Ti / 49-inch PC, run locally by the owner. Keep screenshots private in .local/owner-checks/v4; note build, driver, resolution, refresh and window mode."
+    },
+    {
+      "id": "N2-DISPLAY-V4-PACING",
+      "title": "Performance and frame pacing with V4 settings",
+      "area": "Picture settings (V4)",
+      "required": true,
+      "priority": "high",
+      "steps": [
+        "Turn on F1, Debug, Performance Overlay; in Fullscreen with Fullscreen refresh Smoothest for 60 fps, play part of level 1 with the Original look and note Display FPS and refreshes per game frame.",
+        "Switch to Smooth, Trinitron, Scanlines 100%, Brightness 130%, Dithering Fine (optionally Render resolution 200%) and play the same part for a minute.",
+        "Note FPS, whether motion stays even, and GPU use in Task Manager.",
+        "Change settings while playing and note any hitch; say whether the open level-entry stutter is unchanged, better or worse."
+      ],
+      "expected": "FPS and smoothness match the Original look, with even motion at Smoothest for 60 fps, no new stutter and no lasting hitch when settings change.",
+      "context": "Dev at 0.2.2; one game rebuild. Automated software-rendered (Mesa) checks pass; this is the real-GPU check on the owner's GTX 1080 Ti / 49-inch PC, run locally by the owner. Keep screenshots private in .local/owner-checks/v4; note build, driver, resolution, refresh and window mode."
+    },
+    {
+      "id": "N2-DISPLAY-V4-PERSIST",
+      "title": "Presets, persistence and Reset to original",
+      "area": "Picture settings (V4)",
+      "required": true,
+      "priority": "normal",
+      "steps": [
+        "Choose each preset and check its values: Original PS1 (all original); Smooth (Smooth textures, Dithering Off); CRT (CRT colour, Scanlines 40%); Composite TV (Composite colour, Scanlines 30%, Brightness 105%). Change one value: Preset shows Custom.",
+        "Set your own mix, quit with F1, System, Quit Application, and start again from the launcher.",
+        "Press Reset to original, compare with your Original reference, then restart once more.",
+        "Afterwards restore your backed-up nitrogen-options.ini if you like."
+      ],
+      "expected": "Presets fill exactly those values and leave the rest original; a custom mix survives a restart (texture_filter, dithering, screen_model, scanlines and brightness in .local/nitrogen-options.ini); Reset returns all five, greys out, matches the Original reference and stays after a restart; other display settings are untouched.",
+      "context": "Dev at 0.2.2; one game rebuild. Automated software-rendered (Mesa) checks pass; this is the real-GPU check on the owner's GTX 1080 Ti / 49-inch PC, run locally by the owner. Keep screenshots private in .local/owner-checks/v4; note build, driver, resolution, refresh and window mode."
     },
     {
       "id": "N2-DISPLAY-V2",

@@ -202,6 +202,7 @@
   "tools/measurement/scenarios/v4-reset-1024x768.json",
   "tools/measurement/scenarios/v4-scanlines-1024x768.json",
   "tools/measurement/scenarios/v4-smooth-1024x768.json",
+  "tools/measurement/scenarios/v4-smooth-1920x1080.json",
   "tools/measurement/scenarios/v4-smooth-2560x1080.json",
   "tools/measurement/scenarios/v4-smooth-3840x1080.json",
   "tools/measurement/scenarios/v4-smooth-f1-1024x768.json",
